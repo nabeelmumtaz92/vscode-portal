@@ -1,0 +1,7 @@
+src/**
+test/**
+node_modules/esbuild/**
+node_modules/@esbuild/**
+node_modules/@codemirror/**
+node_modules/@lezer/**
+node_modules/codemirror/**

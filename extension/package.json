@@ -1,0 +1,47 @@
+{
+  "name": "vscode-portal",
+  "displayName": "VSCode Portal",
+  "description": "Use this VS Code window from your iPhone: files, live editing, Claude Code prompts, git and terminal.",
+  "version": "0.1.0",
+  "publisher": "nabeelmumtaz",
+  "license": "MIT",
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "vscodePortal.connectInfo", "title": "VSCode Portal: Show Phone Link" },
+      { "command": "vscodePortal.restart", "title": "VSCode Portal: Restart Server" }
+    ],
+    "configuration": {
+      "title": "VSCode Portal",
+      "properties": {
+        "vscodePortal.enabled": { "type": "boolean", "default": true, "description": "Start the phone server when VS Code opens." },
+        "vscodePortal.port": { "type": "number", "default": 7788, "description": "Port for the phone server. Other windows use the next free port." },
+        "vscodePortal.host": { "type": "string", "default": "127.0.0.1", "description": "Address to listen on. Keep 127.0.0.1 and expose with `tailscale serve`." },
+        "vscodePortal.publicUrl": { "type": "string", "default": "", "description": "The address your phone uses, e.g. https://your-mac.tailnet.ts.net:8443" },
+        "vscodePortal.token": { "type": "string", "default": "", "description": "Access code. Leave empty to use a generated one." },
+        "vscodePortal.claudePath": { "type": "string", "default": "", "description": "Path to the claude CLI. Empty = the one bundled with the Claude Code extension." }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/editor-entry.js --bundle --minify --format=iife --outfile=web/editor.bundle.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": { "ws": "^8.18.0" },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "codemirror": "^6.0.1",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.0",
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-css": "^6.3.0",
+    "@codemirror/lang-markdown": "^6.3.1"
+  }
+}

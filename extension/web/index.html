@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1e1e1e">
+<title>VSCode Portal</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <div class="titles"><div id="ws-name">VSCode Portal</div><div id="sub">Connecting…</div></div>
+  <span id="dot" title="Connection"></span>
+</header>
+
+<main>
+  <section id="view-files" class="view active">
+    <div class="bar"><input id="file-search" type="search" placeholder="Search files" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div id="search-results" class="list"></div>
+    <div id="open-tabs"></div>
+    <div id="tree" class="list"></div>
+  </section>
+
+  <section id="view-editor" class="view">
+    <div class="bar editor-bar">
+      <div id="ed-path" class="path">No file open</div>
+      <span id="ed-dirty" hidden>●</span>
+      <button id="ed-follow" class="chip" title="Follow the file open on the Mac">Follow</button>
+      <button id="ed-mac" class="icon" title="Show on Mac">🖥</button>
+      <button id="ed-ask" class="icon" title="Ask Claude about this">✨</button>
+      <button id="ed-save" class="primary small">Save</button>
+    </div>
+    <div id="editor"></div>
+    <div id="keys"></div>
+  </section>
+
+  <section id="view-prompt" class="view">
+    <div id="chat"></div>
+    <div id="composer">
+      <div class="row">
+        <select id="mode">
+          <option value="edits">Auto-edit</option>
+          <option value="full">Full access</option>
+          <option value="plan">Plan only</option>
+        </select>
+        <button id="ctx" class="chip" hidden></button>
+        <span class="grow"></span>
+        <button id="new-chat" class="chip">New chat</button>
+      </div>
+      <div class="row">
+        <textarea id="prompt-input" rows="1" placeholder="Ask Claude to do something in this project…"></textarea>
+        <button id="send" class="primary">Send</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-changes" class="view">
+    <div id="repos"></div>
+    <h3 class="section">Problems <button id="refresh-problems" class="chip">Refresh</button></h3>
+    <div id="problems" class="list"></div>
+  </section>
+
+  <section id="view-term" class="view">
+    <div class="bar">
+      <button id="term-target" class="chip">Run here</button>
+      <span class="grow"></span>
+      <button id="term-stop" class="chip" hidden>Stop</button>
+      <button id="term-clear" class="chip">Clear</button>
+    </div>
+    <pre id="term-out"></pre>
+    <div id="term-chips" class="chips"></div>
+    <div class="row term-input"><input id="term-input" placeholder="Command" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="term-run" class="primary">Run</button></div>
+  </section>
+</main>
+
+<nav id="tabbar">
+  <button data-view="files" class="active"><span>📁</span>Files</button>
+  <button data-view="editor"><span>📝</span>Editor</button>
+  <button data-view="prompt" class="prompt-tab"><span>✨</span>Prompt</button>
+  <button data-view="changes"><span>⎇</span>Changes</button>
+  <button data-view="term"><span>›_</span>Terminal</button>
+</nav>
+
+<div id="sheet" hidden><div class="sheet-card"><div class="sheet-head"><b id="sheet-title"></b><span class="grow"></span><span id="sheet-actions"></span><button id="sheet-close" class="chip">Close</button></div><div id="sheet-body"></div></div></div>
+
+<div id="login" hidden>
+  <div class="login-card">
+    <h2>VSCode Portal</h2>
+    <p>Enter the access code. In VS Code, click <b>Portal</b> in the status bar to copy your phone link.</p>
+    <input id="login-code" placeholder="Access code" autocomplete="off" autocapitalize="off">
+    <p id="login-err" class="err"></p>
+    <button id="login-go" class="primary">Connect</button>
+  </div>
+</div>
+<div id="toast" hidden></div>
+
+<script src="editor.bundle.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
