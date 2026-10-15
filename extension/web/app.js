@@ -103,6 +103,7 @@ function onEvent(m) {
     case 'active':
       if (m.tabs) renderTabs(m.tabs);
       if (m.active) {
+        S.hello.active = m.active;
         setConn('on', `Mac: ${rel(m.active.path)}`);
         if (S.follow && m.active.path !== S.file) openFile(m.active.path, m.active.line, true);
       }
@@ -206,6 +207,9 @@ async function flush(save) {
 function setDirty(d) { $('#ed-dirty').hidden = !d; }
 async function openFile(p, line, quiet) {
   if (S.pendingWrite && S.file) await flush(false);
+  // Opening the file that's open on the Mac: start where the Mac cursor is.
+  const active = S.hello && S.hello.active;
+  if (!line && active && active.path === p && p !== S.file) line = active.line;
   try {
     const r = await call('read', { path: p });
     S.file = p; editor.setDoc(r.text, p); setDirty(r.dirty);
@@ -388,8 +392,8 @@ async function loadChanges() {
       const sync = [r.ahead ? `↑${r.ahead}` : '', r.behind ? `↓${r.behind}` : ''].filter(Boolean).join(' ');
       const el = h('div', { class: 'repo' },
         h('div', { class: 'repo-head' },
-          h('b', {}, r.name), h('span', { class: 'chip' }, `⎇ ${r.branch}`), sync && h('span', { class: 'meta' }, sync),
-          h('span', { class: 'grow' }),
+          h('b', {}, r.name), h('span', { class: 'chip' }, `⎇ ${r.branch}`), sync && h('span', { class: 'meta' }, sync)),
+        h('div', { class: 'repo-actions' },
           h('button', { class: 'chip', onclick: () => askClaude('Review my uncommitted changes, then commit them with a clear message and push.') }, '✨ Commit & push'),
           r.files.length ? h('button', { class: 'chip', onclick: () => commit(r) }, 'Commit') : null,
           h('button', { class: 'chip', onclick: () => push(r) }, 'Push')),

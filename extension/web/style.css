@@ -92,6 +92,7 @@ body.kb #tabbar { display:none; }
 .repo { border-bottom:1px solid var(--line); }
 .repo-head { padding:10px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .repo-head b { font-size:15px; }
+.repo-actions { padding:0 12px 10px; display:flex; gap:8px; flex-wrap:wrap; }
 .st { font:600 12px ui-monospace, Menlo, monospace; width:22px; text-align:center; }
 .st.M { color:var(--yellow); } .st.A, .st.U { color:var(--green); } .st.D { color:var(--red); }
 h3.section { margin:0; padding:12px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); display:flex; justify-content:space-between; align-items:center; }

@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#1e1e1e"/><path d="M356 96 196 242l-84-64-36 20v116l36 20 84-64 160 146 80-38V134z" fill="#3b9cff"/><path d="M356 176v160l-110-80z" fill="#1e1e1e"/><circle cx="392" cy="120" r="44" fill="#d97757"/><path d="M392 92l8 20 20 8-20 8-8 20-8-20-20-8 20-8z" fill="#fff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2433"/><stop offset="1" stop-color="#0d1118"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5ab4ff"/><stop offset="1" stop-color="#2f6fe0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- portal ring -->
+  <circle cx="256" cy="256" r="178" fill="none" stroke="url(#ring)" stroke-width="22" opacity=".35"/>
+  <circle cx="256" cy="256" r="178" fill="none" stroke="url(#ring)" stroke-width="22" stroke-linecap="round" stroke-dasharray="560 1200" transform="rotate(-140 256 256)"/>
+  <!-- phone -->
+  <rect x="170" y="104" width="172" height="304" rx="34" fill="#0d1118" stroke="#e8eef7" stroke-width="16"/>
+  <rect x="226" y="126" width="60" height="12" rx="6" fill="#e8eef7"/>
+  <!-- code chevrons -->
+  <path d="M232 222 l-36 34 36 34" fill="none" stroke="#5ab4ff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M280 222 l36 34 -36 34" fill="none" stroke="#5ab4ff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- spark -->
+  <path d="M256 318 l9 22 22 9 -22 9 -9 22 -9 -22 -22 -9 22 -9z" fill="#ffb35c"/>
+</svg>
