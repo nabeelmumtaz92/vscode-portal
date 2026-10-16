@@ -2,3 +2,4 @@ node_modules/
 extension/web/editor.bundle.js
 *.vsix
 .DS_Store
+.relay-deploy/
