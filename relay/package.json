@@ -1,0 +1,10 @@
+{
+  "name": "vscode-portal-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VSCode Portal relay: forwards end-to-end encrypted messages between phones and computers, and serves the phone web app.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}

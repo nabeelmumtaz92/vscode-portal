@@ -114,3 +114,8 @@ h3.section { margin:0; padding:12px; font-size:13px; text-transform:uppercase; l
 .login-card { width:100%; max-width:360px; display:flex; flex-direction:column; gap:10px; }
 .login-card p { color:var(--dim); margin:0; }
 #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom)); background:#333; padding:9px 14px; border-radius:10px; z-index:40; max-width:90%; font-size:14px; box-shadow:0 4px 18px rgba(0,0,0,.5); }
+
+#hostpick { position:fixed; inset:0; background:var(--bg); z-index:31; display:flex; align-items:center; justify-content:center; padding:24px; }
+.hp-list { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.hp-item { display:flex; flex-direction:column; align-items:flex-start; text-align:left; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+.hp-item span { color:var(--dim); font-size:12px; }

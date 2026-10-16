@@ -6,6 +6,5 @@ node_modules/@codemirror/**
 node_modules/@lezer/**
 node_modules/codemirror/**
 *.vsix
-web/e2e.js
 images/**
 !images/icon.png

@@ -29,26 +29,30 @@ The extension starts a small server inside VS Code. Your phone opens it in the b
 ## Requirements
 
 - **macOS.** Commands run through `zsh`. Linux will probably work but hasn't been tested. Windows isn't supported yet.
-- **[Tailscale](https://tailscale.com)** (free) on your Mac and your phone, to reach the Mac privately from anywhere.
+- **A way for your phone to reach the Mac**, any one of:
+  - **Same Wi-Fi:** nothing to install.
+  - **From anywhere:** a VSCode Portal relay (end-to-end encrypted, so the relay can't read anything).
+  - **[Tailscale](https://tailscale.com)** (free), if you already use it.
 - **For prompts:** [Claude Code](https://claude.com/claude-code), signed in. Portal uses the copy bundled with the Claude Code extension, or `claude` on your PATH. Usage is billed to your own Claude account.
 
 ## Setup
 
 1. **Install** VSCode Portal. A **📱 Portal :7788** item appears in the status bar.
-2. **Share it on your tailnet.** On the Mac, run:
-   ```bash
-   tailscale serve --bg --https=8443 http://127.0.0.1:7788
-   ```
-   (With the Mac App Store version of Tailscale, the command is `/Applications/Tailscale.app/Contents/MacOS/Tailscale`.)
-3. **Set the address** in VS Code: Settings → `vscodePortal.publicUrl` → `https://<your-mac>.<your-tailnet>.ts.net:8443`.
-4. **Get the link.** Click **Portal** in the status bar → **Copy Link**, and open it on your iPhone. The link includes your access code.
-5. **Optional:** in Safari, tap Share → **Add to Home Screen** to get a full-screen app.
+2. **Pick how your phone connects** (Settings → search "VSCode Portal"):
+   - **Same Wi-Fi:** turn on `vscodePortal.wifi`.
+   - **From anywhere:** set `vscodePortal.relayUrl` to your relay's address.
+   - **Tailscale:** run `tailscale serve --bg --https=8443 http://127.0.0.1:7788` and set `vscodePortal.publicUrl` to `https://<your-mac>.<your-tailnet>.ts.net:8443`.
+3. **Scan the QR code.** Click **Portal** in the status bar and scan the code with your iPhone camera.
+4. **Optional:** in Safari, tap Share → **Add to Home Screen** to get a full-screen app.
 
 ## Security
 
 Portal gives your phone real control of your Mac, so treat the access code like a password.
 
-- The server listens only on `127.0.0.1` by default. Your phone reaches it through Tailscale, which is private to your devices and encrypted.
+- The server listens only on `127.0.0.1` by default.
+- **Relay:** everything is end-to-end encrypted with a pairing key that lives only in the QR code and on your devices. The relay only forwards ciphertext. Run **VSCode Portal: Unpair All Phones** to revoke every phone.
+- **Same Wi-Fi:** traffic on your local network isn't encrypted. Only use it on Wi-Fi you trust.
+- **Tailscale:** private to your devices and encrypted.
 - Every connection needs the access code. It's random, stored in `~/.vscode-portal/token`, and shared by all your VS Code windows. Too many wrong codes lock that address out for 15 minutes.
 - The phone can only open files inside the workspace folders.
 - The **Terminal** tab and **Full access** mode run commands on your Mac as you. Auto-edit mode only allows the short list of commands above.

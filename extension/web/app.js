@@ -33,40 +33,97 @@ const rel = (p) => {
 };
 
 // ---------- connection ----------
-const hashTok = new URLSearchParams(location.hash.slice(1)).get('token');
-if (hashTok) { localStorage.setItem('vsp.token', hashTok); history.replaceState(null, '', location.pathname); }
+// Two ways in: a direct link with an access code (#token=..., over Tailscale or the same Wi-Fi), or a
+// pairing link (#pair=KEY.ROOM) opened on a relay, which reaches the computer from anywhere with
+// end-to-end encryption. The pairing key never leaves the phone and the computer.
+const hashQ = new URLSearchParams(location.hash.slice(1));
+if (hashQ.get('token')) localStorage.setItem('vsp.token', hashQ.get('token'));
+if (hashQ.get('pair')) { localStorage.setItem('vsp.pair', hashQ.get('pair')); localStorage.removeItem('vsp.host'); }
+if (location.hash) history.replaceState(null, '', location.pathname);
 let token = localStorage.getItem('vsp.token') || '';
-let ws = null, nextId = 1, connected = false, backoff = 500;
+const pairing = (() => {
+  const p = localStorage.getItem('vsp.pair');
+  if (!p || !window.E2E || !window.crypto.subtle) return null;
+  const [key, room] = p.split('.');
+  return key && room ? { key, room } : null;
+})();
+let ws = null, nextId = 1, connected = false, backoff = 500, relayKeys = null;
 const pending = new Map();
 
 function setConn(state, text) {
   $('#dot').className = state;
   if (text) $('#sub').textContent = text;
 }
+function onWire(text) {
+  const m = JSON.parse(text);
+  if (m.id != null && pending.has(m.id)) {
+    const p = pending.get(m.id); pending.delete(m.id);
+    return m.ok ? p.res(m.result) : p.rej(new Error(m.error));
+  }
+  onEvent(m);
+}
+function onDrop(e) {
+  connected = false;
+  for (const p of pending.values()) p.rej(new Error('Disconnected'));
+  pending.clear();
+  if (!pairing && (e.code === 4001 || e.code === 4003)) {
+    localStorage.removeItem('vsp.token'); token = '';
+    return showLogin(e.code === 4003 ? 'Too many wrong codes. Try again later.' : 'That code is not right.');
+  }
+  if (pairing && e.code === 4003) return showLogin('This pairing is no longer valid. Scan the QR code in VS Code again.');
+  setConn('off', pairing && e.code === 4404 ? 'Computer is offline. Retrying…' : 'Reconnecting…');
+  setTimeout(connect, backoff); backoff = Math.min(backoff * 2, pairing ? 15000 : 8000);
+}
 function connect() {
+  if (pairing) return connectRelay();
   if (!token) return showLogin();
   setConn('', 'Connecting…');
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token }));
-  ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
-    if (m.id != null && pending.has(m.id)) {
-      const p = pending.get(m.id); pending.delete(m.id);
-      return m.ok ? p.res(m.result) : p.rej(new Error(m.error));
+  ws.onmessage = (e) => onWire(e.data);
+  ws.onclose = onDrop;
+}
+async function pickHost() {
+  const q = new URLSearchParams({ room: pairing.room, proof: relayKeys.clientProof });
+  const res = await fetch('/hosts?' + q);
+  if (res.status === 404) throw Object.assign(new Error('unknown pairing'), { code: 4003 });
+  const list = await res.json();
+  const hosts = [];
+  for (const h of list) { try { hosts.push({ id: h.id, ...(await E2E.openLabel(relayKeys.label, h.label)) }); } catch {} }
+  if (!hosts.length) throw Object.assign(new Error('offline'), { code: 4404 });
+  const saved = localStorage.getItem('vsp.host');
+  if (hosts.some(h => h.id === saved)) return saved;
+  if (hosts.length === 1) return hosts[0].id;
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.id = 'hostpick';
+    box.innerHTML = '<div class="login-card"><h2>Pick a VS Code window</h2><div class="hp-list"></div></div>';
+    for (const h of hosts) {
+      const b = document.createElement('button');
+      b.className = 'hp-item';
+      b.innerHTML = `<b></b><span></span>`;
+      b.querySelector('b').textContent = h.name || 'VS Code';
+      b.querySelector('span').textContent = h.computer || '';
+      b.onclick = () => { localStorage.setItem('vsp.host', h.id); box.remove(); resolve(h.id); };
+      box.querySelector('.hp-list').appendChild(b);
     }
-    onEvent(m);
-  };
-  ws.onclose = (e) => {
-    connected = false;
-    for (const p of pending.values()) p.rej(new Error('Disconnected'));
-    pending.clear();
-    if (e.code === 4001 || e.code === 4003) {
-      localStorage.removeItem('vsp.token'); token = '';
-      return showLogin(e.code === 4003 ? 'Too many wrong codes. Try again later.' : 'That code is not right.');
-    }
-    setConn('off', 'Reconnecting…');
-    setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 8000);
-  };
+    document.body.appendChild(box);
+  });
+}
+async function connectRelay() {
+  setConn('', 'Connecting…');
+  let hostId;
+  try {
+    relayKeys = relayKeys || await E2E.deriveRoom(pairing.key);
+    hostId = await pickHost();
+  } catch (e) { return onDrop({ code: e.code || 1006 }); }
+  const ch = new E2E.Channel(relayKeys.c2h, relayKeys.h2c);
+  const q = new URLSearchParams({ room: pairing.room, proof: relayKeys.clientProof, host: hostId });
+  const sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/c?' + q);
+  // Same shape as a WebSocket for call(): send() encrypts, messages are decrypted before handling.
+  ws = { get readyState() { return sock.readyState; }, send: (t) => ch.seal(t).then(d => sock.send(d)), close: () => sock.close() };
+  sock.onmessage = (e) => ch.open(e.data).then(onWire).catch(() => sock.close());
+  sock.onclose = (e) => { if (e.code === 4404) localStorage.removeItem('vsp.host'); onDrop(e); };
 }
 function call(type, data = {}) {
   return new Promise((res, rej) => {

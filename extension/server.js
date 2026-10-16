@@ -36,7 +36,7 @@ const execP = (file, args, cwd) => new Promise(resolve =>
   execFile(file, args, { cwd, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) =>
     resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) })));
 
-function createPortalServer({ host, token, claudeBin, log = () => {} }) {
+function createPortalServer({ host, token, claudeBin, useApiKey = false, log = () => {} }) {
   const clients = new Set();
   const failures = new Map(); // ip -> { count, since }
   const chat = { events: [], running: false, sessionId: null, proc: null };
@@ -209,7 +209,10 @@ function createPortalServer({ host, token, claudeBin, log = () => {} }) {
       else args.push('--permission-mode', 'acceptEdits', '--allowedTools', SAFE_TOOLS.join(','));
       if (chat.sessionId) args.push('--resume', chat.sessionId);
 
-      const proc = spawn(claudeBin, args, { cwd: roots()[0] || os.homedir(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] });
+      // Use the Claude subscription login (Pro/Max) unless the user opts into API-key billing.
+      const claudeEnv = { ...process.env };
+      if (!useApiKey) { delete claudeEnv.ANTHROPIC_API_KEY; delete claudeEnv.ANTHROPIC_AUTH_TOKEN; }
+      const proc = spawn(claudeBin, args, { cwd: roots()[0] || os.homedir(), env: claudeEnv, stdio: ['pipe', 'pipe', 'pipe'] });
       proc.stdin.end(full);
       chat.running = true;
       chat.proc = proc;
@@ -285,7 +288,7 @@ function createPortalServer({ host, token, claudeBin, log = () => {} }) {
   });
 
   // HTTP: the phone client (static, no secrets) + WebSocket API
-  const server = http.createServer(async (req, res) => {
+  const onRequest = async (req, res) => {
     const url = new URL(req.url, 'http://x');
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
@@ -298,16 +301,31 @@ function createPortalServer({ host, token, claudeBin, log = () => {} }) {
     } catch {
       res.writeHead(404); res.end('Not found');
     }
-  });
+  };
+  const server = http.createServer(onRequest);
+  const extraServers = [];
 
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8 * 1024 * 1024 });
-  wss.on('error', () => {}); // ws re-emits server errors; listen() handles them (e.g. port in use -> next port)
-  wss.on('connection', (ws, req) => {
-    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 });
+  wss.on('error', () => {});
+  const onUpgrade = (req, socket, head) => {
+    if (new URL(req.url, 'http://x').pathname !== '/ws') return socket.destroy();
+    wss.handleUpgrade(req, socket, head, ws => {
+      const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      attach(ws, ip);
+    });
+  };
+  server.on('upgrade', onUpgrade);
+
+  // A connection from the phone. `conn` is a WebSocket or anything shaped like one (send, close, readyState,
+  // on('message'|'close')), e.g. an end-to-end encrypted relay channel. `authed` skips the access code,
+  // for channels that are already authenticated by the pairing key.
+  function attach(conn, ip, { authed = false } = {}) {
+    const ws = conn;
     const client = { id: nextClient++, ws, authed: false, watching: null };
     client.send = (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
     clients.add(client);
-    const authTimer = setTimeout(() => { if (!client.authed) ws.close(4001, 'auth timeout'); }, 10000);
+    const authTimer = authed ? null : setTimeout(() => { if (!client.authed) ws.close(4001, 'auth timeout'); }, 10000);
+    if (authed) { client.authed = true; client.send({ type: 'ready', ...hello() }); }
 
     ws.on('message', async raw => {
       let msg;
@@ -337,33 +355,44 @@ function createPortalServer({ host, token, claudeBin, log = () => {} }) {
       }
     });
     ws.on('close', () => { clients.delete(client); clearTimeout(authTimer); });
-  });
+    return client;
+  }
 
-  function listen(port, hostname = '127.0.0.1', tries = 10) {
+  function listenOn(srv, port, hostname, tries) {
     return new Promise((resolve, reject) => {
       const attempt = (p, left) => {
         const onErr = (e) => {
-          server.removeListener('listening', onOk);
+          srv.removeListener('listening', onOk);
           if (e.code === 'EADDRINUSE' && left > 1) attempt(p + 1, left - 1);
           else reject(e);
         };
-        const onOk = () => { server.removeListener('error', onErr); resolve(server.address().port); };
-        server.once('error', onErr);
-        server.once('listening', onOk);
-        server.listen(p, hostname);
+        const onOk = () => { srv.removeListener('error', onErr); resolve(srv.address().port); };
+        srv.once('error', onErr);
+        srv.once('listening', onOk);
+        srv.listen(p, hostname);
       };
       attempt(port, tries);
     });
   }
+  const listen = (port, hostname = '127.0.0.1', tries = 10) => listenOn(server, port, hostname, tries);
+  // Also serve on another address, e.g. this computer's Wi-Fi address for "same Wi-Fi" phones.
+  async function listenAlso(port, hostname) {
+    const srv = http.createServer(onRequest);
+    srv.on('upgrade', onUpgrade);
+    const p = await listenOn(srv, port, hostname, 1);
+    extraServers.push(srv);
+    return p;
+  }
   function close() {
     if (chat.proc) chat.proc.kill('SIGKILL');
     for (const r of runs.values()) if (r.proc) { try { process.kill(-r.proc.pid, 'SIGKILL'); } catch {} }
-    for (const c of clients) c.ws.terminate();
+    for (const c of clients) { try { c.ws.terminate ? c.ws.terminate() : c.ws.close(1001, 'closing'); } catch {} }
     wss.close();
+    for (const srv of extraServers) srv.close();
     return new Promise(r => server.close(() => r()));
   }
 
-  return { listen, close, server, _chat: chat };
+  return { listen, listenAlso, attach, close, server, _chat: chat };
 }
 
 function findClaude(extensionsDir) {

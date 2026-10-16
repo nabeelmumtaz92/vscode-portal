@@ -1,0 +1,101 @@
+<h1>VSCode Portal</h1>
+<p><strong>Use the VS Code window on your Mac from your iPhone.</strong> Ask Claude Code to do things, edit files live, review diffs, commit and push, and run commands. It all happens in your real project on your real machine.</p>
+<p><img src="hero.jpg" alt="VSCode Portal on an iPhone: Claude Code fixing a failing test"></p>
+<p>Portal isn&#39;t a screen-sharing app. It sends small pieces of data (file text, diffs, chat messages) instead of streaming video, so it stays fast and sharp on cellular, and every screen is built for a phone.</p>
+<h2>Features</h2>
+<p><img src="screens.jpg" alt="Four phone screens: Claude Code prompt, live editor, diff review, terminal"></p>
+<ul>
+<li><strong>✨ Claude Code from your phone.</strong> Type a request. Claude runs in your project on the Mac, using your existing Claude login, and you watch the reply stream in. Each file edit and command shows up as a card (tap it to see the diff), followed by the time and cost. Follow-up prompts continue the same chat.<ul>
+<li><strong>Auto-edit:</strong> edits files and runs a short list of safe commands (git status/diff/add/commit/push, npm test/build/lint, tsc).</li>
+<li><strong>Plan only:</strong> reads and plans, changes nothing.</li>
+<li><strong>Full access:</strong> can run anything. The app asks you to confirm the first time.</li>
+<li>Tap 📎 to send along the file and selection you&#39;re looking at.</li>
+</ul>
+</li>
+<li><strong>📝 Live editor.</strong> Browse and search the workspace and edit with syntax highlighting and a row of code symbols above the keyboard. Your edits appear in the VS Code window on your Mac as you type, and edits made on the Mac appear on your phone. <strong>Follow</strong> keeps your phone on whatever file is open on the Mac.</li>
+<li><strong>⎇ Changes.</strong> Branch, changed files and diffs, then <strong>Commit</strong>, <strong>Push</strong>, or <strong>✨ Commit &amp; push</strong> to have Claude write the commit message. See VS Code&#39;s Problems and tap <strong>Ask Claude to fix</strong>.</li>
+<li><strong>›_ Terminal.</strong> Run a command and see its output on your phone, or send it to the VS Code terminal on your Mac.</li>
+<li><strong>Multiple windows.</strong> Each VS Code window gets its own port (7788, 7789, …), shown in the status bar.</li>
+</ul>
+<h2>How it works</h2>
+<p><img src="how-it-works.png" alt="Phone connects over a private Tailscale link to VS Code on your Mac, which talks to the VS Code API, git and shell, and the Claude Code CLI"></p>
+<p>The extension starts a small server inside VS Code. Your phone opens it in the browser through a private link on your own Tailscale network. Nothing goes through a third-party server.</p>
+<h2>Requirements</h2>
+<ul>
+<li><strong>macOS.</strong> Commands run through <code>zsh</code>. Linux will probably work but hasn&#39;t been tested. Windows isn&#39;t supported yet.</li>
+<li><strong><a href="https://tailscale.com">Tailscale</a></strong> (free) on your Mac and your phone, to reach the Mac privately from anywhere.</li>
+<li><strong>For prompts:</strong> <a href="https://claude.com/claude-code">Claude Code</a>, signed in. Portal uses the copy bundled with the Claude Code extension, or <code>claude</code> on your PATH. Usage is billed to your own Claude account.</li>
+</ul>
+<h2>Setup</h2>
+<ol>
+<li><strong>Install</strong> VSCode Portal. A <strong>📱 Portal :7788</strong> item appears in the status bar.</li>
+<li><strong>Share it on your tailnet.</strong> On the Mac, run:<pre><code class="language-bash">tailscale serve --bg --https=8443 http://127.0.0.1:7788
+</code></pre>
+(With the Mac App Store version of Tailscale, the command is <code>/Applications/Tailscale.app/Contents/MacOS/Tailscale</code>.)</li>
+<li><strong>Set the address</strong> in VS Code: Settings → <code>vscodePortal.publicUrl</code> → <code>https://&lt;your-mac&gt;.&lt;your-tailnet&gt;.ts.net:8443</code>.</li>
+<li><strong>Get the link.</strong> Click <strong>Portal</strong> in the status bar → <strong>Copy Link</strong>, and open it on your iPhone. The link includes your access code.</li>
+<li><strong>Optional:</strong> in Safari, tap Share → <strong>Add to Home Screen</strong> to get a full-screen app.</li>
+</ol>
+<h2>Security</h2>
+<p>Portal gives your phone real control of your Mac, so treat the access code like a password.</p>
+<ul>
+<li>The server listens only on <code>127.0.0.1</code> by default. Your phone reaches it through Tailscale, which is private to your devices and encrypted.</li>
+<li>Every connection needs the access code. It&#39;s random, stored in <code>~/.vscode-portal/token</code>, and shared by all your VS Code windows. Too many wrong codes lock that address out for 15 minutes.</li>
+<li>The phone can only open files inside the workspace folders.</li>
+<li>The <strong>Terminal</strong> tab and <strong>Full access</strong> mode run commands on your Mac as you. Auto-edit mode only allows the short list of commands above.</li>
+<li><strong>Don&#39;t</strong> change <code>vscodePortal.host</code> to <code>0.0.0.0</code>, and don&#39;t publish the port to the internet with something like <code>tailscale funnel</code>.</li>
+</ul>
+<p>To change the code, delete <code>~/.vscode-portal/token</code> (or set <code>vscodePortal.token</code>) and run <strong>VSCode Portal: Restart Server</strong>.</p>
+<h2>Settings</h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>vscodePortal.enabled</code></td>
+<td><code>true</code></td>
+<td>Start the phone server when VS Code opens.</td>
+</tr>
+<tr>
+<td><code>vscodePortal.port</code></td>
+<td><code>7788</code></td>
+<td>First port to try. Other windows use the next free port.</td>
+</tr>
+<tr>
+<td><code>vscodePortal.host</code></td>
+<td><code>127.0.0.1</code></td>
+<td>Address to listen on. Keep it local and use <code>tailscale serve</code>.</td>
+</tr>
+<tr>
+<td><code>vscodePortal.publicUrl</code></td>
+<td></td>
+<td>The address your phone uses, e.g. <code>https://my-mac.tail1234.ts.net:8443</code>.</td>
+</tr>
+<tr>
+<td><code>vscodePortal.token</code></td>
+<td></td>
+<td>Your own access code. Leave empty to use a generated one.</td>
+</tr>
+<tr>
+<td><code>vscodePortal.claudePath</code></td>
+<td></td>
+<td>Path to the <code>claude</code> CLI. Leave empty to find it automatically.</td>
+</tr>
+</tbody></table>
+<h2>Commands</h2>
+<ul>
+<li><strong>VSCode Portal: Show Phone Link</strong>: copy or open the link for this window (same as clicking the status bar item).</li>
+<li><strong>VSCode Portal: Restart Server</strong>: restart after changing settings or the access code.</li>
+</ul>
+<h2>Troubleshooting</h2>
+<ul>
+<li><strong>Status bar says &quot;Portal off&quot;.</strong> Another app is using the port. Hover over the status bar item for the reason, or change <code>vscodePortal.port</code>.</li>
+<li><strong>&quot;Claude Code not found&quot;.</strong> Install the Claude Code extension or CLI, or set <code>vscodePortal.claudePath</code>.</li>
+<li><strong>Phone can&#39;t connect.</strong> Check that Tailscale is on on both devices, that <code>tailscale serve</code> points at the port shown in the status bar, and that <code>publicUrl</code> matches.</li>
+</ul>
+<hr>
+<p>VSCode Portal is an independent project. It isn&#39;t affiliated with or endorsed by Microsoft or Anthropic. Visual Studio Code is a trademark of Microsoft Corporation. Claude and Claude Code are trademarks of Anthropic.</p>
