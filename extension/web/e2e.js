@@ -61,9 +61,25 @@
       this.sc = p.catch(() => {});
       return p;
     }
+    // Binary messages (screen video): [0x00][u32 counter][bytes]. Text messages start with "{", so the
+    // two can't be confused, and both share one counter.
+    sealBytes(bytes) {
+      const p = this.sc.then(() => {
+        const plain = new Uint8Array(5 + bytes.length);
+        new DataView(plain.buffer).setUint32(1, ++this.sq);
+        plain.set(bytes, 5);
+        return encrypt(this.sk, plain);
+      });
+      this.sc = p.catch(() => {});
+      return p;
+    }
+    // Resolves to a string, or a Uint8Array for binary messages
     open(data) {
       const p = this.rc.then(async () => {
-        const { q, m } = JSON.parse(td.decode(await decrypt(this.rk, data)));
+        const plain = await decrypt(this.rk, data);
+        let q, m;
+        if (plain[0] === 0) { q = new DataView(plain.buffer, plain.byteOffset).getUint32(1); m = plain.subarray(5); }
+        else ({ q, m } = JSON.parse(td.decode(plain)));
         if (q !== this.rq + 1) throw new Error('Message out of order');
         this.rq = q;
         return m;

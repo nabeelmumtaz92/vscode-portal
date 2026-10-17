@@ -80,7 +80,8 @@ function connect() {
   setConn('', 'Connecting…');
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token }));
-  ws.onmessage = (e) => onWire(e.data);
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = (e) => (typeof e.data === 'string' ? onWire(e.data) : Screen.onPacket(new Uint8Array(e.data)));
   ws.onclose = onDrop;
 }
 async function pickHost() {
@@ -122,7 +123,7 @@ async function connectRelay() {
   const sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/c?' + q);
   // Same shape as a WebSocket for call(): send() encrypts, messages are decrypted before handling.
   ws = { get readyState() { return sock.readyState; }, send: (t) => ch.seal(t).then(d => sock.send(d)), close: () => sock.close() };
-  sock.onmessage = (e) => ch.open(e.data).then(onWire).catch(() => sock.close());
+  sock.onmessage = (e) => ch.open(e.data).then(m => (typeof m === 'string' ? onWire(m) : Screen.onPacket(m))).catch(() => sock.close());
   sock.onclose = (e) => { if (e.code === 4404) localStorage.removeItem('vsp.host'); onDrop(e); };
 }
 function call(type, data = {}) {
@@ -132,6 +133,10 @@ function call(type, data = {}) {
     pending.set(id, { res, rej });
     ws.send(JSON.stringify({ id, type, ...data }));
   });
+}
+// Fire and forget: no reply expected (screen input and acks)
+function post(type, data = {}) {
+  if (connected && ws && ws.readyState === 1) ws.send(JSON.stringify({ type, ...data }));
 }
 function showLogin(err = '') {
   $('#login').hidden = false; $('#login-err').textContent = err; $('#login-code').focus();
@@ -152,7 +157,9 @@ function onEvent(m) {
       S.chatRunning = m.chat.running; rebuildChat(m.chat.events); updateSend();
       if (S.file) openFile(S.file, null, true);
       if (S.view === 'changes') loadChanges();
+      Screen.onReady(m.screen);
       break;
+    case 'screen.event': Screen.onEvent(m); break;
     case 'doc':
       if (m.path === S.file && !S.pendingWrite) { editor.applyRemote(m.text); setDirty(m.dirty); }
       break;
@@ -183,11 +190,15 @@ function debounce(key, fn, ms) { clearTimeout(timers[key]); timers[key] = setTim
 
 // ---------- views ----------
 function show(view) {
+  if (S.view === 'screen' && view !== 'screen') Screen.hide();
+  document.body.classList.remove('chat-over');
   S.view = view;
+  document.body.dataset.view = view;
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`));
   document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   if (view === 'prompt') { $('[data-view=prompt]').classList.remove('badge'); updateCtx(); scrollChat(true); }
   if (view === 'changes') { loadChanges(); loadProblems(); }
+  if (view === 'screen') Screen.show();
 }
 document.querySelectorAll('#tabbar button').forEach(b => { b.onclick = () => show(b.dataset.view); });
 
@@ -426,7 +437,7 @@ async function send() {
   let context = null;
   if (S.ctxOn && S.file) { const sel = editor.selection(); context = { path: S.file, line: sel.line, selection: sel.text }; }
   input.value = ''; autosize();
-  if (S.view !== 'prompt') show('prompt');
+  if (S.view !== 'prompt' && !document.body.classList.contains('chat-over')) show('prompt');
   try { if (S.pendingWrite) await flush(false); await call('prompt', { text, mode, context }); S.chatRunning = true; updateSend(); }
   catch (err) { input.value = text; toast(err.message, 3500); }
 }

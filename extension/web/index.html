@@ -40,6 +40,7 @@
   </section>
 
   <section id="view-prompt" class="view">
+    <button id="chat-grab" title="Back to the screen"><span></span>Minimize</button>
     <div id="chat"></div>
     <div id="composer">
       <div class="row">
@@ -76,6 +77,33 @@
     <div id="term-chips" class="chips"></div>
     <div class="row term-input"><input id="term-input" placeholder="Command" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="term-run" class="primary">Run</button></div>
   </section>
+  <section id="view-screen" class="view">
+    <div id="scr-bar" class="bar">
+      <button id="scr-mode" class="chip" title="Touch: tap where you want to click. Trackpad: drag to move the pointer, tap to click.">👆 Touch</button>
+      <select id="scr-pick" title="Which screen"></select>
+      <select id="scr-quality" title="Picture quality">
+        <option value="low">Data saver</option>
+        <option value="medium" selected>Balanced</option>
+        <option value="high">Sharp</option>
+      </select>
+      <span class="grow"></span>
+      <button id="scr-full" class="icon" title="Full screen">⤢</button>
+    </div>
+    <div id="scr-stage">
+      <div id="scr-layer"><canvas id="scr-canvas"></canvas></div>
+      <div id="scr-cursor" hidden></div>
+      <div id="scr-msg" hidden></div>
+      <button id="scr-exit" class="chip" hidden>Exit full screen</button>
+      <div id="scr-clip" hidden><span>Copied on the Mac</span><button class="chip">Copy to phone</button></div>
+    </div>
+    <div id="scr-keys"></div>
+    <div id="scr-actions">
+      <button id="scr-kbd-btn" title="Keyboard">⌨️<span>Keyboard</span></button>
+      <button id="scr-paste" title="Paste the phone's clipboard on the Mac">📋<span>Paste</span></button>
+      <button id="scr-chat" title="Ask Claude">✨<span>Claude</span></button>
+    </div>
+    <textarea id="scr-kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Type on the Mac"></textarea>
+  </section>
 </main>
 
 <nav id="tabbar">
@@ -84,6 +112,7 @@
   <button data-view="prompt" class="prompt-tab"><span>✨</span>Prompt</button>
   <button data-view="changes"><span>⎇</span>Changes</button>
   <button data-view="term"><span>›_</span>Terminal</button>
+  <button data-view="screen"><span>🖥</span>Screen</button>
 </nav>
 
 <div id="sheet" hidden><div class="sheet-card"><div class="sheet-head"><b id="sheet-title"></b><span class="grow"></span><span id="sheet-actions"></span><button id="sheet-close" class="chip">Close</button></div><div id="sheet-body"></div></div></div>
@@ -102,5 +131,6 @@
 <script src="editor.bundle.js"></script>
 <script src="e2e.js"></script>
 <script src="app.js"></script>
+<script src="screen.js"></script>
 </body>
 </html>

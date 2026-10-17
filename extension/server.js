@@ -36,7 +36,7 @@ const execP = (file, args, cwd) => new Promise(resolve =>
   execFile(file, args, { cwd, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) =>
     resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) })));
 
-function createPortalServer({ host, token, claudeBin, useApiKey = false, log = () => {} }) {
+function createPortalServer({ host, token, claudeBin, useApiKey = false, screen = null, log = () => {} }) {
   const clients = new Set();
   const failures = new Map(); // ip -> { count, since }
   const chat = { events: [], running: false, sessionId: null, proc: null };
@@ -76,7 +76,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, log = (
     return {
       workspace: host.workspaceName(), folders: host.folders(), active: host.activeFile(), tabs: host.openTabs(),
       chat: { running: chat.running, events: chat.events, hasSession: !!chat.sessionId },
-      claude: !!claudeBin, home: os.homedir(),
+      claude: !!claudeBin, home: os.homedir(), screen: screen ? screen.status() : null,
     };
   }
 
@@ -263,6 +263,13 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, log = (
       broadcast({ type: 'chat.reset' });
       return true;
     },
+
+    // Screen: video goes out as binary messages; the phone acks each frame (see screen.js)
+    async 'screen.start'(_, client) { if (!screen) throw new Error('Screen sharing needs a Mac.'); return screen.join(client); },
+    async 'screen.stop'(_, client) { if (screen) screen.leave(client); return true; },
+    async 'screen.ack'({ seq }, client) { if (screen) screen.ack(client, seq); },
+    async 'screen.input'(msg) { if (screen) screen.input(msg); },
+    async 'screen.config'(msg, client) { if (!screen) throw new Error('Screen sharing needs a Mac.'); return screen.configure(msg, client); },
   };
 
   // Events from VS Code
@@ -323,6 +330,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, log = (
     const ws = conn;
     const client = { id: nextClient++, ws, authed: false, watching: null };
     client.send = (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
+    client.sendBinary = (b) => { if (ws.readyState === 1) (ws.sendBinary ? ws.sendBinary(b) : ws.send(b)); };
     clients.add(client);
     const authTimer = authed ? null : setTimeout(() => { if (!client.authed) ws.close(4001, 'auth timeout'); }, 10000);
     if (authed) { client.authed = true; client.send({ type: 'ready', ...hello() }); }
@@ -354,7 +362,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, log = (
         if (id != null) client.send({ id, ok: false, error: e.message || String(e) });
       }
     });
-    ws.on('close', () => { clients.delete(client); clearTimeout(authTimer); });
+    ws.on('close', () => { clients.delete(client); clearTimeout(authTimer); if (screen) screen.leave(client); });
     return client;
   }
 

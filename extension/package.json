@@ -1,8 +1,8 @@
 {
   "name": "vscode-portal",
   "displayName": "VSCode Portal",
-  "description": "Code from your iPhone: run Claude Code, edit files live, review diffs, commit and push, all in the VS Code window on your Mac.",
-  "version": "0.1.0",
+  "description": "Use your Mac from your iPhone: run Claude Code, edit files live, review diffs, commit and push, and see and control the whole screen.",
+  "version": "0.2.0",
   "publisher": "nabeelmumtaz92",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -24,7 +24,9 @@
     "ai",
     "tailscale",
     "pwa",
-    "git"
+    "git",
+    "screen sharing",
+    "remote desktop"
   ],
   "pricing": "Free",
   "repository": {
@@ -56,6 +58,10 @@
       {
         "command": "vscodePortal.resetPairing",
         "title": "VSCode Portal: Unpair All Phones"
+      },
+      {
+        "command": "vscodePortal.enableScreen",
+        "title": "VSCode Portal: Turn On Screen Sharing"
       }
     ],
     "configuration": {
@@ -75,6 +81,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "Also let phones on the **same Wi-Fi** connect directly. Traffic on your local network isn't encrypted, so only turn this on with Wi-Fi you trust."
+        },
+        "vscodePortal.screen": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Let paired phones see this Mac's screen and control its mouse and keyboard (the **Screen** tab). macOS asks you to allow **Screen Recording** and **Accessibility** for Visual Studio Code. Run **VSCode Portal: Turn On Screen Sharing** to set it up."
         },
         "vscodePortal.port": {
           "type": "number",
@@ -111,7 +122,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "esbuild src/editor-entry.js --bundle --minify --format=iife --outfile=web/editor.bundle.js",
+    "build": "esbuild src/editor-entry.js --bundle --minify --format=iife --outfile=web/editor.bundle.js && native/build.sh",
     "test": "node --test test/*.test.js",
     "package": "npx --yes @vscode/vsce package -o vscode-portal.vsix"
   },

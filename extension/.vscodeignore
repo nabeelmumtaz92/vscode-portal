@@ -8,3 +8,4 @@ node_modules/codemirror/**
 *.vsix
 images/**
 !images/icon.png
+native/**

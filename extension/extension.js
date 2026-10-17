@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { createPortalServer, findClaude } = require('./server');
 const { connectRelay } = require('./relay-host');
+const { createScreen } = require('./screen');
 const E2E = require('./web/e2e.js');
 
 let portal = null;
@@ -14,6 +15,7 @@ let statusItem = null;
 let port = null;
 let wifiUrl = null; // http://<wifi-ip>:<port> when same-Wi-Fi access is on
 let relay = null;
+let screen = null; // shared by restarts, so a running capture keeps going
 
 function commonEdit(doc, text) {
   // Replace only the part that changed, so the cursor on the Mac stays put.
@@ -170,7 +172,7 @@ async function start(context, host) {
   if (!cfg.get('enabled')) return;
   const token = await getToken();
   const claudeBin = cfg.get('claudePath') || findClaude(path.join(os.homedir(), '.vscode', 'extensions'));
-  portal = createPortalServer({ host, token, claudeBin, useApiKey: !!cfg.get('useApiKey'), log: (m) => console.log(`[VSCode Portal] ${m}`) });
+  portal = createPortalServer({ host, token, claudeBin, useApiKey: !!cfg.get('useApiKey'), screen, log: (m) => console.log(`[VSCode Portal] ${m}`) });
   try {
     port = await portal.listen(cfg.get('port'), cfg.get('host'));
     wifiUrl = null;
@@ -243,8 +245,24 @@ async function activate(context) {
   statusItem.command = 'vscodePortal.connectInfo';
   context.subscriptions.push(statusItem);
   const host = makeHost(context);
+  screen = createScreen({
+    helperPath: path.join(context.extensionPath, 'bin', 'portal-helper'),
+    enabled: () => vscode.workspace.getConfiguration('vscodePortal').get('screen'),
+    log: (m) => console.log(`[VSCode Portal] ${m}`),
+  });
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('vscodePortal.enableScreen', async () => {
+      if (process.platform !== 'darwin') return vscode.window.showWarningMessage('Screen sharing needs a Mac.');
+      const ok = await vscode.window.showWarningMessage(
+        'Let your paired phones see this Mac\'s screen and control its mouse and keyboard?',
+        { modal: true, detail: 'macOS will ask you to allow Screen Recording and Accessibility for Visual Studio Code. You can turn this off any time in Settings › VSCode Portal › Screen.' },
+        'Turn On');
+      if (ok !== 'Turn On') return;
+      await vscode.workspace.getConfiguration('vscodePortal').update('screen', true, vscode.ConfigurationTarget.Global);
+      screen.requestPermissions();
+      vscode.window.showInformationMessage('Screen sharing is on. If macOS asked for permissions, allow them, then quit and reopen VS Code.');
+    }),
     vscode.commands.registerCommand('vscodePortal.connectInfo', () => showConnectPanel()),
     vscode.commands.registerCommand('vscodePortal.resetPairing', async () => {
       const ok = await vscode.window.showWarningMessage('Unpair all phones? They will need to scan the new QR code.', { modal: true }, 'Unpair');
@@ -259,11 +277,11 @@ async function activate(context) {
       portal = null; port = null; relay = null; wifiUrl = null;
       await start(context, host);
     }),
-    { dispose: () => { if (relay) relay.close(); if (portal) portal.close(); } },
+    { dispose: () => { if (relay) relay.close(); if (portal) portal.close(); if (screen) screen.close(); } },
   );
   await start(context, host);
 }
 
-function deactivate() { if (relay) relay.close(); return portal && portal.close(); }
+function deactivate() { if (relay) relay.close(); if (screen) screen.close(); return portal && portal.close(); }
 
 module.exports = { activate, deactivate };

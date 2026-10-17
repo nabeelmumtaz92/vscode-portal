@@ -1,10 +1,10 @@
 # VSCode Portal
 
-**Use the VS Code window on your Mac from your iPhone.** Ask Claude Code to do things, edit files live, review diffs, commit and push, and run commands. It all happens in your real project on your real machine.
+**Use your Mac from your iPhone.** Ask Claude Code to do things, edit files live, review diffs, commit and push, and run commands, all in your real project on your real machine. When you need more than code, the Screen tab shows the whole Mac and lets you control it with touch, a trackpad and a keyboard.
 
 ![VSCode Portal on an iPhone: Claude Code fixing a failing test](https://raw.githubusercontent.com/nabeelmumtaz92/vscode-portal/HEAD/extension/images/hero.jpg)
 
-Portal isn't a screen-sharing app. It sends small pieces of data (file text, diffs, chat messages) instead of streaming video, so it stays fast and sharp on cellular, and every screen is built for a phone.
+The coding tabs send small pieces of data (file text, diffs, chat messages) instead of video, so they stay fast and sharp on cellular, and every screen is built for a phone. The Screen tab streams hardware-encoded H.264 video and adjusts its quality to your connection.
 
 ## Features
 
@@ -18,6 +18,13 @@ Portal isn't a screen-sharing app. It sends small pieces of data (file text, dif
 - **📝 Live editor.** Browse and search the workspace and edit with syntax highlighting and a row of code symbols above the keyboard. Your edits appear in the VS Code window on your Mac as you type, and edits made on the Mac appear on your phone. **Follow** keeps your phone on whatever file is open on the Mac.
 - **⎇ Changes.** Branch, changed files and diffs, then **Commit**, **Push**, or **✨ Commit & push** to have Claude write the commit message. See VS Code's Problems and tap **Ask Claude to fix**.
 - **›_ Terminal.** Run a command and see its output on your phone, or send it to the VS Code terminal on your Mac.
+- **🖥 Screen** (off until you turn it on). See the Mac's whole screen and control it from your phone:
+  - **Touch mode:** tap to click, swipe to scroll, pinch to zoom.
+  - **Trackpad mode:** drag to move the pointer, tap to click.
+  - **Both modes:** hold to right-click, hold and drag to select or move things, and tap with two fingers to right-click.
+  - **Keyboard:** type on the Mac with the iPhone keyboard. A key row adds Esc, Tab, arrows, ⌘ ⌥ ⌃ ⇧ and common shortcuts.
+  - **Clipboard:** text copied on the Mac shows up on your phone, and 📋 Paste sends your phone's clipboard to the Mac.
+  - **Claude without leaving the screen:** ✨ pulls Claude up over the live screen, and you can minimize it to keep working.
 - **Multiple windows.** Each VS Code window gets its own port (7788, 7789, …), shown in the status bar.
 
 ## How it works
@@ -33,6 +40,7 @@ The extension starts a small server inside VS Code. Your phone opens it in the b
   - **Same Wi-Fi:** nothing to install.
   - **From anywhere:** a VSCode Portal relay (end-to-end encrypted, so the relay can't read anything).
   - **[Tailscale](https://tailscale.com)** (free), if you already use it.
+- **For the Screen tab:** macOS 12.3 or later, iOS 16.4 or later, and Screen Recording and Accessibility permission for Visual Studio Code.
 - **For prompts:** [Claude Code](https://claude.com/claude-code), signed in. Portal uses the copy bundled with the Claude Code extension, or `claude` on your PATH. Usage is billed to your own Claude account.
 
 ## Setup
@@ -56,6 +64,7 @@ Portal gives your phone real control of your Mac, so treat the access code like 
 - Every connection needs the access code. It's random, stored in `~/.vscode-portal/token`, and shared by all your VS Code windows. Too many wrong codes lock that address out for 15 minutes.
 - The phone can only open files inside the workspace folders.
 - The **Terminal** tab and **Full access** mode run commands on your Mac as you. Auto-edit mode only allows the short list of commands above.
+- The **Screen** tab is off until you run **VSCode Portal: Turn On Screen Sharing**. When it's on, a paired phone can see everything on the Mac's screen and use its mouse and keyboard. macOS shows its screen-recording indicator in the menu bar while a phone is watching. Turn it off again in Settings › VSCode Portal › Screen.
 - **Don't** change `vscodePortal.host` to `0.0.0.0`, and don't publish the port to the internet with something like `tailscale funnel`.
 
 To change the code, delete `~/.vscode-portal/token` (or set `vscodePortal.token`) and run **VSCode Portal: Restart Server**.
@@ -67,19 +76,26 @@ To change the code, delete `~/.vscode-portal/token` (or set `vscodePortal.token`
 | `vscodePortal.enabled` | `true` | Start the phone server when VS Code opens. |
 | `vscodePortal.port` | `7788` | First port to try. Other windows use the next free port. |
 | `vscodePortal.host` | `127.0.0.1` | Address to listen on. Keep it local and use `tailscale serve`. |
+| `vscodePortal.wifi` | `false` | Let phones on the same Wi-Fi connect directly. |
+| `vscodePortal.relayUrl` | | Relay for connecting from anywhere, end-to-end encrypted. |
 | `vscodePortal.publicUrl` | | The address your phone uses, e.g. `https://my-mac.tail1234.ts.net:8443`. |
+| `vscodePortal.screen` | `false` | Turn on the Screen tab (see and control the Mac). |
+| `vscodePortal.useApiKey` | `false` | Bill prompts to `ANTHROPIC_API_KEY` instead of your Claude subscription. |
 | `vscodePortal.token` | | Your own access code. Leave empty to use a generated one. |
 | `vscodePortal.claudePath` | | Path to the `claude` CLI. Leave empty to find it automatically. |
 
 ## Commands
 
-- **VSCode Portal: Show Phone Link**: copy or open the link for this window (same as clicking the status bar item).
+- **VSCode Portal: Connect Phone (QR Code)**: show the QR codes to scan with your phone (same as clicking the status bar item).
+- **VSCode Portal: Turn On Screen Sharing**: turn on the Screen tab and ask macOS for the permissions it needs.
+- **VSCode Portal: Unpair All Phones**: revoke every paired phone.
 - **VSCode Portal: Restart Server**: restart after changing settings or the access code.
 
 ## Troubleshooting
 
 - **Status bar says "Portal off".** Another app is using the port. Hover over the status bar item for the reason, or change `vscodePortal.port`.
 - **"Claude Code not found".** Install the Claude Code extension or CLI, or set `vscodePortal.claudePath`.
+- **Screen tab says macOS hasn't allowed recording.** System Settings › Privacy & Security › Screen Recording: turn on Visual Studio Code, then quit and reopen VS Code. Do the same under **Accessibility** if taps and typing don't reach the Mac.
 - **Phone can't connect.** Check that Tailscale is on on both devices, that `tailscale serve` points at the port shown in the status bar, and that `publicUrl` matches.
 
 ---

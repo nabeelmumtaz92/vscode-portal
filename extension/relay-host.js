@@ -13,6 +13,10 @@ class RelayConn extends EventEmitter {
     if (this.readyState !== 1) return;
     this.ch.seal(text).then(d => this.link.send({ t: 'msg', c: this.cid, d })).catch(() => this.close(4002, 'encrypt failed'));
   }
+  sendBinary(bytes) {
+    if (this.readyState !== 1) return;
+    this.ch.sealBytes(bytes).then(d => this.link.send({ t: 'msg', c: this.cid, d })).catch(() => this.close(4002, 'encrypt failed'));
+  }
   close(code = 1000) {
     if (this.readyState !== 1) return;
     this.readyState = 3;
