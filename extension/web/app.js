@@ -372,7 +372,7 @@ function toolBody(name, input = {}) {
 }
 function chatEvent(e, live) {
   if (e.type === 'portal.user') {
-    append(h('div', { class: 'msg user' }, e.text, h('span', { class: 'tag' }, [
+    append(h('div', { class: 'msg user' }, e.text, ...(e.attachments || []).map(a => h('div', { class: 'tag' }, `${a.kind === 'video' ? '🎞' : '🖼'} ${a.name}${a.frames ? ` (${a.frames} frames)` : ''}`)), h('span', { class: 'tag' }, [
       { edits: 'Auto-edit', full: 'Full access', plan: 'Plan only' }[e.mode], e.context ? ` · ${base(e.context)}` : ''].join(''))));
     if (live) addThinking();
   } else if (e.type === 'stream_event') {
@@ -426,9 +426,40 @@ function updateSend() {
   const b = $('#send');
   b.textContent = S.chatRunning ? 'Stop' : 'Send'; b.classList.toggle('stop', S.chatRunning);
 }
+const pendingAtt = []; // {id, name, kind, status}
+function renderAtt() {
+  const box = $('#attachments'); box.innerHTML = ''; box.hidden = !pendingAtt.length;
+  for (const a of pendingAtt) box.append(h('span', { class: 'chip att' + (a.err ? ' err' : '') },
+    `${a.kind === 'video' ? '🎞' : '🖼'} ${a.name} ${a.err ? '✗ ' + a.err : a.status}`,
+    h('b', { onclick: () => { pendingAtt.splice(pendingAtt.indexOf(a), 1); renderAtt(); } }, ' ×')));
+  updateSend();
+}
+async function uploadFile(file) {
+  const a = { name: file.name || 'file', kind: file.type.startsWith('video') ? 'video' : 'image', status: '0%' };
+  pendingAtt.push(a); renderAtt();
+  try {
+    const { id } = await call('attach.begin', { name: a.name, size: file.size });
+    const CH = 512 * 1024;
+    for (let off = 0; off < file.size; off += CH) {
+      const buf = new Uint8Array(await file.slice(off, off + CH).arrayBuffer());
+      let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      await call('attach.chunk', { id, data: btoa(bin) });
+      a.status = `${Math.round(Math.min(off + CH, file.size) / file.size * 100)}%`; renderAtt();
+    }
+    a.status = a.kind === 'video' ? 'extracting frames…' : 'processing…'; renderAtt();
+    const r = await call('attach.end', { id });
+    a.id = id; a.status = r.frames ? `✓ ${r.frames} frames` : '✓'; a.ready = true;
+  } catch (err) { a.err = err.message; }
+  renderAtt();
+}
+$('#attach').onclick = () => $('#attach-file').click();
+$('#attach-file').onchange = (e) => { for (const f of e.target.files) uploadFile(f); e.target.value = ''; };
+
 async function send() {
   if (S.chatRunning) return call('prompt.stop').catch(e => toast(e.message));
   const input = $('#prompt-input'); const text = input.value.trim(); if (!text) return;
+  if (pendingAtt.some(a => !a.ready && !a.err)) return toast('Still uploading…');
+  const attachments = pendingAtt.filter(a => a.ready).map(a => a.id);
   const mode = $('#mode').value;
   if (mode === 'full' && !localStorage.getItem('vsp.fullOk')) {
     if (!confirm('Full access lets Claude run any command on your Mac without asking. Continue?')) return;
@@ -438,7 +469,7 @@ async function send() {
   if (S.ctxOn && S.file) { const sel = editor.selection(); context = { path: S.file, line: sel.line, selection: sel.text }; }
   input.value = ''; autosize();
   if (S.view !== 'prompt' && !document.body.classList.contains('chat-over')) show('prompt');
-  try { if (S.pendingWrite) await flush(false); await call('prompt', { text, mode, context }); S.chatRunning = true; updateSend(); }
+  try { if (S.pendingWrite) await flush(false); await call('prompt', { text, mode, context, attachments }); pendingAtt.length = 0; renderAtt(); S.chatRunning = true; updateSend(); }
   catch (err) { input.value = text; toast(err.message, 3500); }
 }
 $('#send').onclick = send;

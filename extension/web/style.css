@@ -172,3 +172,8 @@ body.chat-over #chat-grab span { width:38px; height:5px; border-radius:3px; back
   #scr-keys { grid-area:keys; }
   body.chat-over #view-prompt { height:85%; }
 }
+
+#attachments { flex-wrap:wrap; }
+#attachments[hidden] { display:none; }
+.chip.att.err { background:#7a2b2b; }
+.chip.att b { cursor:pointer; }

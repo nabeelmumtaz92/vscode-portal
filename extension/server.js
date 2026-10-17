@@ -36,8 +36,20 @@ const execP = (file, args, cwd) => new Promise(resolve =>
   execFile(file, args, { cwd, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) =>
     resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) })));
 
+const UPLOAD_DIR = path.join(os.homedir(), '.vscode-portal', 'uploads');
+const MAX_UPLOAD = 500 * 1024 * 1024;
+const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.3gp']);
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif']);
+function findBin(name) {
+  for (const d of [...(process.env.PATH || '').split(':'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']) {
+    try { const p = path.join(d, name); fs.accessSync(p, fs.constants.X_OK); return p; } catch {}
+  }
+  return null;
+}
+
 function createPortalServer({ host, token, claudeBin, useApiKey = false, screen = null, log = () => {} }) {
   const clients = new Set();
+  const uploads = new Map();
   const failures = new Map(); // ip -> { count, since }
   const chat = { events: [], running: false, sessionId: null, proc: null };
   const runs = new Map();
@@ -190,7 +202,64 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
       return (r.stdout + r.stderr).trim() || 'Pushed';
     },
 
-    async prompt({ text, mode, context }) {
+    // ---- attachments: phone uploads images/videos in chunks; videos become frames Claude can Read ----
+    async 'attach.begin'({ name, size }) {
+      if (!(size <= MAX_UPLOAD)) throw new Error('File too large (500 MB max)');
+      const id = crypto.randomBytes(6).toString('hex');
+      const dir = path.join(UPLOAD_DIR, id);
+      await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+      const safe = path.basename(String(name || 'file')).replace(/[^\w.\- ]/g, '_').slice(-80) || 'file';
+      const file = path.join(dir, safe);
+      uploads.set(id, { dir, file, name: safe, got: 0, size });
+      await fsp.writeFile(file, '');
+      return { id };
+    },
+    async 'attach.chunk'({ id, data }) {
+      const u = uploads.get(id); if (!u) throw new Error('Unknown upload');
+      const buf = Buffer.from(String(data), 'base64');
+      u.got += buf.length;
+      if (u.got > MAX_UPLOAD) throw new Error('File too large');
+      await fsp.appendFile(u.file, buf);
+      return u.got;
+    },
+    async 'attach.end'({ id }) {
+      const u = uploads.get(id); if (!u) throw new Error('Unknown upload');
+      const ext = path.extname(u.name).toLowerCase();
+      const out = { id, name: u.name, path: u.file, kind: 'file', frames: [], note: '' };
+      if (IMAGE_EXT.has(ext)) {
+        out.kind = 'image';
+        if (ext === '.heic' || ext === '.heif') {
+          const jpg = path.join(u.dir, u.name.replace(/\.[^.]+$/, '') + '.jpg');
+          const r = await execP('/usr/bin/sips', ['-s', 'format', 'jpeg', u.file, '--out', jpg]);
+          if (!r.code) out.path = jpg;
+        }
+      } else if (VIDEO_EXT.has(ext)) {
+        out.kind = 'video';
+        const ffmpeg = findBin('ffmpeg'), ffprobe = findBin('ffprobe');
+        if (!ffmpeg) throw new Error('ffmpeg not found on the Mac (brew install ffmpeg) so videos cannot be viewed');
+        let dur = 0;
+        if (ffprobe) {
+          const r = await execP(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', u.file]);
+          dur = parseFloat(r.stdout) || 0;
+        }
+        const n = dur ? Math.min(16, Math.max(4, Math.round(dur))) : 8;
+        out.duration = dur;
+        for (let i = 0; i < n; i++) {
+          const t = dur ? ((i + 0.5) * dur) / n : i * 2;
+          const f = path.join(u.dir, `frame_${String(i + 1).padStart(2, '0')}.jpg`);
+          const r = await execP(ffmpeg, ['-v', 'error', '-y', '-ss', t.toFixed(2), '-i', u.file, '-frames:v', '1',
+            '-vf', "scale='min(960,iw)':-2", '-q:v', '4', f]);
+          if (!r.code && fs.existsSync(f)) out.frames.push({ path: f, t: +t.toFixed(1) });
+        }
+        if (!out.frames.length) throw new Error('Could not read frames from that video');
+        const hasAudio = ffprobe && (await execP(ffprobe, ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', u.file])).stdout.trim();
+        out.note = hasAudio ? 'It has an audio track, which you cannot hear.' : '';
+      }
+      u.info = out;
+      return { id, name: out.name, kind: out.kind, frames: out.frames.length, duration: out.duration || 0 };
+    },
+
+    async prompt({ text, mode, context, attachments }) {
       if (chat.running) throw new Error('Claude is still working. Stop it first.');
       if (!claudeBin) throw new Error('Claude Code not found. Install the Claude Code extension or set vscodePortal.claudePath.');
       text = String(text || '').trim();
@@ -203,7 +272,19 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
           + (context.selection ? `, with this selected:\n\`\`\`\n${String(context.selection).slice(0, 4000)}\n\`\`\`` : '')
           + '.)';
       }
+      const atts = (Array.isArray(attachments) ? attachments : []).map(id => uploads.get(id) && uploads.get(id).info).filter(Boolean);
+      if (atts.length) {
+        full += '\n\n(Attachments from VSCode Portal. Use the Read tool to view these image files:';
+        for (const a of atts) {
+          if (a.kind === 'video') {
+            full += `\n- Video "${a.name}" (${a.duration ? a.duration.toFixed(1) + 's' : 'unknown length'}), ${a.frames.length} frames sampled evenly in time order, read all of them to follow what happens: `
+              + a.frames.map(f => `${f.path} (t=${f.t}s)`).join(', ') + `. Original file: ${a.path}. ${a.note}`;
+          } else full += `\n- ${a.kind} "${a.name}": ${a.path}`;
+        }
+        full += ')';
+      }
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+      if (atts.length) args.push('--add-dir', UPLOAD_DIR);
       if (mode === 'full') args.push('--permission-mode', 'bypassPermissions');
       else if (mode === 'plan') args.push('--permission-mode', 'plan');
       else args.push('--permission-mode', 'acceptEdits', '--allowedTools', SAFE_TOOLS.join(','));
@@ -216,7 +297,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
       proc.stdin.end(full);
       chat.running = true;
       chat.proc = proc;
-      pushChat({ type: 'portal.user', text, mode, context: context && context.path || null, at: Date.now() });
+      pushChat({ type: 'portal.user', text, mode, context: context && context.path || null, attachments: atts.map(a => ({ name: a.name, kind: a.kind, frames: a.frames.length })), at: Date.now() });
       broadcast({ type: 'chat.status', running: true });
 
       let buf = '';
