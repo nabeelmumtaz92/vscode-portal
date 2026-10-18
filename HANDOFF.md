@@ -59,9 +59,9 @@ Every chat is a saved Claude Code session; each message's mode is **🖥 Mac** (
 - ✅ Add to a running task (Send becomes "Add"); ✅ several chats at once (they take turns with the mouse/keyboard)
 - ✅ Saved chats: searchable list, reopen/continue, swipe to delete, running ones marked; ✅ memory notes + search_chats
 - ✅ "End of task" marker; ✅ "Not delivered, tap to send again"
-- ⚠️ Attachments: photos, videos and documents ✅ (Mac mode gets pictures/PDFs in the message); ❌ resume across connection
-  drops; ❌ copies in Downloads › Portal Uploads
-- ❌ Import the old Portal's chats and notes
+- ✅ Attachments: photos, videos and documents (Mac mode gets pictures/PDFs in the message); uploads resume across dropped
+  connections (pieces carry their offset); copies land in Downloads › Portal Uploads
+- ✅ Old Portal's chats and notes imported (automatically once; command "VSCode Portal: Import Chats from Portal")
 
 ### Siri and Shortcuts
 - ❌ "Hey Siri, ask Portal" (runs a task, reads back the reply with a picture); ❌ "Show my Mac's screen" shortcut

@@ -520,6 +520,10 @@ function chatEvent(e, live) {
   } else if (e.type === 'portal.approved') {
     const box = approvalBoxes.get(e.rid);
     if (box) box._buttons.replaceWith(h('div', { class: 'done' }, e.allowed ? '✓ Allowed' : '✗ Denied'));
+  } else if (e.type === 'portal.note') {
+    append(h('div', { class: 'step' }, e.text));
+  } else if (e.type === 'portal.notice') {
+    append(h('div', { class: 'note' }, e.text));
   } else if (e.type === 'portal.error') {
     removeThinking(); append(h('div', { class: 'note err' }, e.text));
   } else if (e.type === 'portal.stopped') {
@@ -642,19 +646,32 @@ async function uploadFile(file) {
   const a = { name: file.name || 'file', kind: file.type.startsWith('video') ? 'video' : 'image', status: '0%' };
   pendingAtt.push(a); renderAtt();
   try {
-    const { id } = await call('attach.begin', { name: a.name, size: file.size });
+    const { id } = await retrying(() => call('attach.begin', { name: a.name, size: file.size }));
     const CH = 512 * 1024;
-    for (let off = 0; off < file.size; off += CH) {
+    // Survives dropped connections: each piece says where it goes, and the Mac answers how much it has
+    for (let off = 0; off < file.size;) {
       const buf = new Uint8Array(await file.slice(off, off + CH).arrayBuffer());
       let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
-      await call('attach.chunk', { id, data: btoa(bin) });
-      a.status = `${Math.round(Math.min(off + CH, file.size) / file.size * 100)}%`; renderAtt();
+      const r = await retrying(() => call('attach.chunk', { upload: id, data: btoa(bin), offset: off }), () => { a.status = 'waiting for the connection…'; renderAtt(); });
+      off = typeof r === 'object' ? r.got : off + buf.length;
+      a.status = `${Math.round(Math.min(off, file.size) / file.size * 100)}%`; renderAtt();
     }
     a.status = a.kind === 'video' ? 'extracting frames…' : 'processing…'; renderAtt();
-    const r = await call('attach.end', { id });
+    const r = await retrying(() => call('attach.end', { upload: id }));
     a.id = id; a.status = r.frames ? `✓ ${r.frames} frames` : '✓'; a.ready = true;
   } catch (err) { a.err = err.message; }
   renderAtt();
+}
+// Tries again across a dropped connection (waits for it to come back), for up to two minutes
+async function retrying(fn, onWait) {
+  const until = Date.now() + 120000;
+  for (;;) {
+    try { return await fn(); } catch (e) {
+      if (!/Disconnected|Not connected/.test(e.message) || Date.now() > until) throw e;
+      if (onWait) onWait();
+      while (!connected && Date.now() < until) await new Promise(r => setTimeout(r, 500));
+    }
+  }
 }
 $('#attach').onclick = () => $('#attach-file').click();
 $('#attach-file').onchange = (e) => { for (const f of e.target.files) uploadFile(f); e.target.value = ''; };

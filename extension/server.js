@@ -213,15 +213,18 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
       await fsp.writeFile(file, '');
       return { id };
     },
-    async 'attach.chunk'({ id, data }) {
+    // offset makes a resent piece harmless: the phone learns how much arrived and carries on from there
+    // (The upload's id travels as `upload`: `id` is the request's own id)
+    async 'attach.chunk'({ upload: id, data, offset }) {
       const u = uploads.get(id); if (!u) throw new Error('Unknown upload');
+      if (offset !== undefined && offset !== u.got) return { got: u.got };
       const buf = Buffer.from(String(data), 'base64');
       u.got += buf.length;
       if (u.got > MAX_UPLOAD) throw new Error('File too large');
       await fsp.appendFile(u.file, buf);
-      return u.got;
+      return offset !== undefined ? { got: u.got } : u.got;
     },
-    async 'attach.end'({ id }) {
+    async 'attach.end'({ upload: id }) {
       const u = uploads.get(id); if (!u) throw new Error('Unknown upload');
       const ext = path.extname(u.name).toLowerCase();
       const out = { id, name: u.name, path: u.file, kind: 'file', frames: [], note: '' };
@@ -255,6 +258,17 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
         out.note = hasAudio ? 'It has an audio track, which you cannot hear.' : '';
       }
       u.info = out;
+      // A copy for the user, like Portal: ~/Downloads/Portal Uploads (never overwriting)
+      if (!process.env.VSP_NO_DOWNLOADS_COPY) {
+        try {
+          const dest = path.join(os.homedir(), 'Downloads', 'Portal Uploads');
+          await fsp.mkdir(dest, { recursive: true });
+          const ext = path.extname(u.name), stem = path.basename(u.name, ext);
+          let target = path.join(dest, u.name);
+          for (let n = 2; fs.existsSync(target); n++) target = path.join(dest, `${stem} ${n}${ext}`);
+          await fsp.copyFile(u.file, target);
+        } catch {}
+      }
       return { id, name: out.name, kind: out.kind, frames: out.frames.length, duration: out.duration || 0 };
     },
 

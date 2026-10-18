@@ -191,11 +191,23 @@ async function start(context, host) {
       relay.onState(() => updateStatus(claudeBin));
     }
     updateStatus(claudeBin);
+    importPortalOnce();
   } catch (e) {
     statusItem.text = '$(device-mobile) Portal off';
     statusItem.tooltip = `VSCode Portal could not start: ${e.message}`;
   }
   statusItem.show();
+}
+
+// Moving from the old Portal app: bring its chats and notes over once (VSCode Portal: Import Chats from Portal re-runs it)
+function importPortalOnce() {
+  const marker = path.join(PORTAL_DIR, '.imported-portal');
+  if (fs.existsSync(marker) || !fs.existsSync(path.join(os.homedir(), '.config', 'portal', 'chats')) || !portal) return;
+  try {
+    const r = portal.chats.importPortal();
+    fs.writeFileSync(marker, new Date().toISOString());
+    if (r.chats) vscode.window.showInformationMessage(`VSCode Portal brought over ${r.chats} chats and ${r.notes} notes from Portal.`);
+  } catch (e) { console.log(`[VSCode Portal] import from Portal failed: ${e.message}`); }
 }
 
 async function showConnectPanel() {
@@ -264,6 +276,11 @@ async function activate(context) {
       vscode.window.showInformationMessage('Screen sharing is on. If macOS asked for permissions, allow them, then quit and reopen VS Code.');
     }),
     vscode.commands.registerCommand('vscodePortal.connectInfo', () => showConnectPanel()),
+    vscode.commands.registerCommand('vscodePortal.importPortal', () => {
+      if (!portal) return vscode.window.showWarningMessage('VSCode Portal is not running.');
+      const r = portal.chats.importPortal();
+      vscode.window.showInformationMessage(r.chats || r.notes ? `Brought over ${r.chats} chats and ${r.notes} notes from Portal.` : 'Everything from Portal is already here.');
+    }),
     vscode.commands.registerCommand('vscodePortal.resetPairing', async () => {
       const ok = await vscode.window.showWarningMessage('Unpair all phones? They will need to scan the new QR code.', { modal: true }, 'Unpair');
       if (ok !== 'Unpair') return;

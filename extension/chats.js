@@ -149,7 +149,41 @@ function createStore() {
     const line = String(fact).replace(/\s+/g, ' ').trim().slice(0, 300);
     if (line) fs.appendFileSync(NOTES, `- ${line}\n`, { mode: 0o600 });
   }
-  return { get, save, create, list, remove, search, texts, notes, remember };
+  // Brings over the old Portal's chats (~/.config/portal/chats) and notes; safe to run again (skips what's here)
+  function importPortal(dir = path.join(os.homedir(), '.config', 'portal')) {
+    let chats = 0, notesAdded = 0;
+    let files = [];
+    try { files = fs.readdirSync(path.join(dir, 'chats')).filter((n) => n.endsWith('.json')); } catch {}
+    for (const name of files) {
+      let old; try { old = JSON.parse(fs.readFileSync(path.join(dir, 'chats', name), 'utf8')); } catch { continue; }
+      const id = String(old.id || '').replace(/^(\d{8})-(\d{6})-/, '$1$2-');
+      if (!VALID_ID.test(id) || get(id)) continue;
+      const events = [];
+      for (const e of old.events || []) {
+        const at = Math.round((e.t || 0) * 1000);
+        if (e.kind === 'user') events.push({ type: 'portal.user', text: e.text || '', mode: 'mac', addendum: !!e.addendum, at,
+          attachments: [...(e.images || []).map((_, i) => ({ name: `photo ${i + 1}`, kind: 'image' })), ...(e.files || []).map((f) => ({ name: f.name, kind: 'file' }))] });
+        else if (e.kind === 'reply') events.push({ type: 'assistant', message: { content: [{ type: 'text', text: e.text || '' }] } });
+        else if (e.kind === 'step' || e.kind === 'note') events.push({ type: 'portal.note', text: e.text || '' });
+        else if (e.kind === 'notice') events.push({ type: 'portal.notice', text: e.text || '' });
+        else if (e.kind === 'image') events.push({ type: 'portal.image', image: e.image || null, caption: e.caption || '', at });
+        else if (e.kind === 'approve') events.push({ type: 'portal.approve', rid: e.rid, command: e.command || '', reason: e.reason || '', at });
+        else if (e.kind === 'approved') events.push({ type: 'portal.approved', rid: e.rid, allowed: !!e.allowed, at });
+      }
+      const chat = { id, title: old.title || 'Chat from Portal', created: Math.round((old.created || 0) * 1000) || Date.now(),
+        updated: Math.round((old.updated || 0) * 1000) || Date.now(), session: null, cwd: WORK_DIR, events, imported: 'portal' };
+      cache.set(id, chat); save(chat, true); chats++;
+    }
+    try {
+      const have = notes();
+      for (const line of fs.readFileSync(path.join(dir, 'memory.md'), 'utf8').split('\n')) {
+        const fact = line.replace(/^\s*[-*]\s*/, '').trim();
+        if (fact && !have.includes(fact)) { remember(fact); notesAdded++; }
+      }
+    } catch {}
+    return { chats, notes: notesAdded };
+  }
+  return { get, save, create, list, remove, search, texts, notes, remember, importPortal };
 }
 
 // ---------- running chats ----------
@@ -414,6 +448,7 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
       return { chat: chat.id };
     },
     running: () => [...runs.keys()],
+    importPortal: () => store.importPortal(),
     close() { for (const id of runs.keys()) this.stop(id); },
   };
 }

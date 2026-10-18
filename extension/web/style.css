@@ -245,3 +245,5 @@ input, textarea, select { font-size:16px; }
 #viewer-scroll { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; touch-action:pan-x pan-y pinch-zoom; }
 #viewer-img { max-width:100%; max-height:100%; transform-origin:center; }
 .viewer-bar { display:flex; gap:8px; align-items:center; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:#111; font-size:13px; color:var(--dim); }
+.step { color:var(--dim); font-size:12.5px; margin:0 0 6px; padding-left:10px; border-left:2px solid #3a3a3a; }
+.chip.older { display:block; margin:0 auto 12px; }

@@ -68,3 +68,26 @@ test('falls back to the next port when busy', async () => {
   assert.equal(pb, pa + 1);
   await a.close(); await b.close();
 });
+
+test('uploads survive resent pieces: the server answers how much it has', async () => {
+  process.env.VSP_NO_DOWNLOADS_COPY = '1';
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vsp-'));
+  const portal = createPortalServer({ host: fakeHost(root), token: 'secret', claudeBin: null });
+  const port = await portal.listen(0);
+  try {
+    const c = await client(port, 'secret');
+    const { id } = await c.call('attach.begin', { name: 'notes.txt', size: 10 });
+    const b64 = (s) => Buffer.from(s).toString('base64');
+    assert.deepEqual(await c.call('attach.chunk', { upload: id, data: b64('hello'), offset: 0 }), { got: 5 });
+    // The same piece again (the reply was lost when the connection dropped): ignored
+    assert.deepEqual(await c.call('attach.chunk', { upload: id, data: b64('hello'), offset: 0 }), { got: 5 });
+    // A piece from the wrong place: ignored, and the phone learns where to carry on
+    assert.deepEqual(await c.call('attach.chunk', { upload: id, data: b64('XXXXX'), offset: 9 }), { got: 5 });
+    assert.deepEqual(await c.call('attach.chunk', { upload: id, data: b64('world'), offset: 5 }), { got: 10 });
+    const r = await c.call('attach.end', { upload: id });
+    assert.equal(r.kind, 'file');
+    const saved = fs.readFileSync(path.join(os.homedir(), '.vscode-portal', 'uploads', id, 'notes.txt'), 'utf8');
+    assert.equal(saved, 'helloworld');
+    c.ws.removeAllListeners('close'); c.ws.close();
+  } finally { await portal.close(); }
+});

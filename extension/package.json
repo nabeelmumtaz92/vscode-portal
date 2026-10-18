@@ -62,6 +62,10 @@
       {
         "command": "vscodePortal.enableScreen",
         "title": "VSCode Portal: Turn On Screen Sharing"
+      },
+      {
+        "command": "vscodePortal.importPortal",
+        "title": "VSCode Portal: Import Chats from Portal"
       }
     ],
     "configuration": {
