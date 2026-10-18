@@ -64,6 +64,16 @@ function onWire(text) {
 }
 function onDrop(e) {
   connected = false;
+  if (S.switching) {
+    // Picked another window: reconnect at once, starting fresh
+    S.switching = false;
+    for (const p of pending.values()) p.rej(new Error('Disconnected'));
+    pending.clear();
+    S.file = null;
+    editor.setDoc('', ''); $('#ed-path').textContent = 'No file open';
+    setConn('', 'Switching…');
+    return connect();
+  }
   for (const p of pending.values()) p.rej(new Error('Disconnected'));
   pending.clear();
   if (!pairing && (e.code === 4001 || e.code === 4003)) {
@@ -84,33 +94,53 @@ function connect() {
   ws.onmessage = (e) => (typeof e.data === 'string' ? onWire(e.data) : Screen.onPacket(new Uint8Array(e.data)));
   ws.onclose = onDrop;
 }
-async function pickHost() {
+// Every VS Code window on the paired computers that's online right now, with its decrypted name
+async function listHosts() {
   const q = new URLSearchParams({ room: pairing.room, proof: relayKeys.clientProof });
   const res = await fetch('/hosts?' + q);
   if (res.status === 404) throw Object.assign(new Error('unknown pairing'), { code: 4003 });
-  const list = await res.json();
   const hosts = [];
-  for (const h of list) { try { hosts.push({ id: h.id, ...(await E2E.openLabel(relayKeys.label, h.label)) }); } catch {} }
+  for (const h of await res.json()) { try { hosts.push({ id: h.id, since: h.since, ...(await E2E.openLabel(relayKeys.label, h.label)) }); } catch {} }
+  return hosts.sort((a, b) => (a.computer || '').localeCompare(b.computer || '') || (a.name || '').localeCompare(b.name || ''));
+}
+async function pickHost() {
+  const hosts = await listHosts();
   if (!hosts.length) throw Object.assign(new Error('offline'), { code: 4404 });
   const saved = localStorage.getItem('vsp.host');
   if (hosts.some(h => h.id === saved)) return saved;
   if (hosts.length === 1) return hosts[0].id;
-  return new Promise(resolve => {
-    const box = document.createElement('div');
-    box.id = 'hostpick';
-    box.innerHTML = '<div class="login-card"><h2>Pick a VS Code window</h2><div class="hp-list"></div></div>';
-    for (const h of hosts) {
-      const b = document.createElement('button');
-      b.className = 'hp-item';
-      b.innerHTML = `<b></b><span></span>`;
-      b.querySelector('b').textContent = h.name || 'VS Code';
-      b.querySelector('span').textContent = h.computer || '';
-      b.onclick = () => { localStorage.setItem('vsp.host', h.id); box.remove(); resolve(h.id); };
-      box.querySelector('.hp-list').appendChild(b);
-    }
-    document.body.appendChild(box);
-  });
+  return new Promise(resolve => showWindows(hosts, null, (id) => { localStorage.setItem('vsp.host', id); resolve(id); }, false));
 }
+// The window list: shown at the start when there's more than one, and from the header any time
+function showWindows(hosts, current, choose, closable = true) {
+  document.querySelector('#hostpick')?.remove();
+  const box = h('div', { id: 'hostpick' });
+  const list = h('div', { class: 'hp-list' });
+  for (const w of hosts) {
+    list.append(h('button', { class: `hp-item${w.id === current ? ' current' : ''}`, onclick: () => { box.remove(); if (w.id !== current) choose(w.id); } },
+      h('b', {}, w.name || 'VS Code'), h('span', {}, `${w.computer || ''}${w.id === current ? ' · connected' : ''}`)));
+  }
+  if (!hosts.length) list.append(h('p', { class: 'note' }, 'No VS Code windows are online. Open VS Code on your computer.'));
+  box.append(h('div', { class: 'login-card' }, h('h2', {}, 'VS Code windows'),
+    h('p', { class: 'hp-note' }, 'Every window with VSCode Portal running shows up here.'), list,
+    closable ? h('button', { class: 'chip hp-close', onclick: () => box.remove() }, 'Close') : null));
+  document.body.append(box);
+}
+function switchHost(id) {
+  localStorage.setItem('vsp.host', id);
+  S.switching = true;
+  if (S.view === 'screen') Screen.hide();
+  if (ws) ws.close();
+}
+async function openWindowList() {
+  if (!pairing) return toast('Switching windows works when you connect through the relay (scan the QR code in VS Code).', 3500);
+  try {
+    relayKeys = relayKeys || await E2E.deriveRoom(pairing.key);
+    showWindows(await listHosts(), localStorage.getItem('vsp.host'), switchHost);
+  } catch (e) { toast(e.code === 4003 ? 'This pairing is no longer valid. Scan the QR code again.' : 'Couldn\'t load the window list'); }
+}
+$('#top .titles').addEventListener('click', openWindowList);
+if (pairing) $('#top').classList.add('switchable');
 async function connectRelay() {
   setConn('', 'Connecting…');
   let hostId;

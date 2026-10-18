@@ -395,9 +395,15 @@ const Screen = (() => {
   // Hardware keyboards: arrows, Esc, Tab and shortcuts
   const NAMED = { Enter: 'Return', Tab: 'Tab', Escape: 'Escape', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Delete: 'Delete' };
   for (let i = 1; i <= 12; i++) NAMED['F' + i] = 'F' + i;
+  // On a Windows or Linux keyboard, Ctrl works as ⌘ (so Ctrl+C copies) and the Windows key as Control
+  const appleKeyboard = /Mac|iPhone|iPad/.test(navigator.platform) || (navigator.userAgentData && navigator.userAgentData.platform === 'macOS');
   kbd.addEventListener('keydown', (e) => {
     const mods = [];
-    if (e.metaKey) mods.push('command'); if (e.ctrlKey) mods.push('control'); if (e.altKey) mods.push('alt');
+    if (e.metaKey) mods.push(appleKeyboard ? 'command' : 'control');
+    if (e.ctrlKey) mods.push(appleKeyboard ? 'control' : 'command');
+    if (e.altKey) mods.push('alt');
+    // Paste: let the browser fire a paste event, which sends this computer's clipboard first
+    if (mods.length === 1 && mods[0] === 'command' && e.key.toLowerCase() === 'v') return;
     if (NAMED[e.key]) {
       if (e.shiftKey) mods.push('shift');
       key(NAMED[e.key], mods); e.preventDefault();
@@ -405,6 +411,12 @@ const Screen = (() => {
       if (e.shiftKey) mods.push('shift');
       key(e.key.toLowerCase(), mods); e.preventDefault();
     }
+  });
+  kbd.addEventListener('paste', (e) => {
+    const text = e.clipboardData && e.clipboardData.getData('text/plain');
+    e.preventDefault();
+    if (text) input('clipboard', { text });
+    setTimeout(() => key('v', ['command']), 150);
   });
   kbd.addEventListener('focus', () => { document.body.classList.add('scr-typing'); $('#scr-kbd-btn').classList.remove('pulse'); });
   kbd.addEventListener('blur', () => { document.body.classList.remove('scr-typing'); clearSticky(); });
