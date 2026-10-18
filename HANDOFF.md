@@ -29,7 +29,7 @@ Old repo `~/Desktop/Portal` (private; `portal-server.js`, `agent/`, `web/index.h
   large uploads.
 
 ## Open work on this branch
-None uncommitted. The running VS Code windows only pick up new extension code after a reload (or in a new window).
+README rewritten to match the code and `scripts/copy-pair-link.sh` added on Oct 18 (committed locally, not pushed). The running VS Code windows only pick up new extension code after a reload (or in a new window).
 
 ## Gap list: Portal vs VSCode Portal (Oct 18 2026)
 
@@ -73,14 +73,31 @@ Every chat is a saved Claude Code session; each message's mode is **🖥 Mac** (
 ### Connection and app
 - ✅ From anywhere (relay, E2E encrypted), same Wi-Fi, Tailscale; ✅ pairing key in Keychain/Keystore; ✅ reconnects on return
 - ✅ Keeps the phone awake while connected; ✅ warns when mouse/keyboard permission is missing
-- ❌ Push notifications ("done", "needs your OK"): needs an APNs key (Apple Developer → Keys → Apple Push Notifications
-  service) for the app; the always-on host or relay would send them
+- ❌ Push notifications ("done", "needs your OK"): **blocked on an Apple limit, not on code.** An Apple team can have only
+  **2** push keys, and both slots are already used by team-scoped Expo push keys that other apps depend on. Apple lets you download a key file only once, so those files
+  are not on this Mac. Options, owner's call: (a) export one from EAS credentials if it allows, or (b) revoke one Expo key, create
+  a new push key, download its .p8 once, and re-upload it to EAS for the apps that use it (Apple: Certificates, Identifiers &
+  Profiles › Keys), or (c) skip push and rely on the app being open. **Never revoke a key without checking which apps use it.**
+  Plan once a .p8 exists: entitlement `aps-environment`, AppDelegate registers for remote notifications and hands the token to
+  the web view, the web app sends `{type:'push-token'}` to the host over the E2E channel, the host (always-on or extension)
+  stores tokens and sends via HTTP/2 + ES256 JWT when a Mac-mode chat finishes or needs approval.
 - ⚠️ Updates: TestFlight/App Store replace Portal's over-the-air install (by design)
 - ✅ Always on (built, not yet switched on): "VSCode Portal: Keep Running When VS Code Is Closed" installs
   `com.vscodeportal.host` (standalone.js on VS Code's bundled Node, files copied to ~/Library/Application Support/VSCode
   Portal/host, log in ~/Library/Logs/VSCode Portal). Shows on the phone as "<Mac> (always on)": Files over the home
   folder, Terminal, Screen, Mac-mode Claude. macOS asks once for Screen Recording + Accessibility for "Code Helper (Plugin)".
-- ❌ Funnel/launch-agent migration so the old Portal can be turned off
+- ❌ Funnel/launch-agent migration so the old Portal can be turned off: **deliberately not done.** The old Portal server
+  (`com.portal.server`, port 9300, Funnel https://nabeels-mac-mini.tail74c059.ts.net) is what the owner may be using right now.
+  Cutover checklist for the owner, in order: (1) switch on Always On (command above) and approve macOS Screen Recording +
+  Accessibility; (2) confirm the phone shows "<Mac> (always on)" and Screen, Terminal and a Mac-mode chat all work from the
+  VSCode Portal app, not the old one; (3) only then move the Funnel (`tailscale funnel` / `serve` to the new host port) and
+  `launchctl bootout` `com.portal.server`. Never do step 3 from a session that is connected through the old Portal.
+
+## Embedding in another app
+VSCode Portal's phone web app can run inside another app's web view through the relay. `scripts/copy-pair-link.sh` copies the
+pairing link (`https://<relay>/#pair=KEY.ROOM`) to the Mac clipboard without printing it; the host app asks for it once and keeps
+it in the keychain. It is the same Claude Code and Mac control, with no extra approval layer. Treat the link like a password.
+Details of the one integration the owner uses are kept in a private repository, not here.
 
 ## Suggested order
 1. Diff Portal vs VSCode Portal feature by feature and write the gap list here.
