@@ -4,3 +4,4 @@ extension/web/editor.bundle.js
 .DS_Store
 .relay-deploy/
 extension/bin/
+extension/web/app.html

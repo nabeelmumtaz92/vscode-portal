@@ -221,10 +221,10 @@ struct PictureView: View {
 }
 
 struct AskPortalIntent: AppIntent {
-  static let title: LocalizedStringResource = "Ask your Mac"
-  static let description = IntentDescription("Tell your Mac what to do. Claude does it and tells you what happened.")
+  static let title: LocalizedStringResource = "Ask your computer"
+  static let description = IntentDescription("Tell your computer what to do. Claude does it and tells you what happened.")
 
-  @Parameter(title: "Request", requestValueDialog: IntentDialog("What should your Mac do?"))
+  @Parameter(title: "Request", requestValueDialog: IntentDialog("What should your computer do?"))
   var request: String
 
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetView {
@@ -239,15 +239,15 @@ struct AskPortalIntent: AppIntent {
 }
 
 struct ShowScreenIntent: AppIntent {
-  static let title: LocalizedStringResource = "Show my Mac's screen"
-  static let description = IntentDescription("A picture of your Mac's screen right now.")
+  static let title: LocalizedStringResource = "Show my computer screen"
+  static let description = IntentDescription("A picture of your computer screen right now.")
 
   func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetView {
     let conn = try await PortalConnection.connect()
     defer { conn.close() }
     guard let shot = try await conn.call("screen.snapshot") as? [String: Any], let b64 = shot["data"] as? String,
           let data = Data(base64Encoded: b64), let image = UIImage(data: data) else { throw PortalError("Couldn't get a picture of the screen.") }
-    let file = IntentFile(data: data, filename: "Mac screen.jpg", type: .jpeg)
+    let file = IntentFile(data: data, filename: "computer screen.jpg", type: .jpeg)
     return .result(value: file, view: AnyView(PictureView(image: image)))
   }
 }
@@ -255,10 +255,10 @@ struct ShowScreenIntent: AppIntent {
 struct PortalShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {
     AppShortcut(intent: AskPortalIntent(), phrases: ["Ask \(.applicationName)", "Ask \(.applicationName) to do something",
-                                                     "Tell my Mac with \(.applicationName)"],
-                shortTitle: "Ask your Mac", systemImageName: "sparkles")
-    AppShortcut(intent: ShowScreenIntent(), phrases: ["Show my Mac's screen in \(.applicationName)", "Show my Mac with \(.applicationName)"],
-                shortTitle: "Show Mac screen", systemImageName: "display")
+                                                     "Tell my computer with \(.applicationName)"],
+                shortTitle: "Ask your computer", systemImageName: "sparkles")
+    AppShortcut(intent: ShowScreenIntent(), phrases: ["Show my computer screen in \(.applicationName)", "Show my computer with \(.applicationName)"],
+                shortTitle: "Show computer screen", systemImageName: "display")
   }
 }
 

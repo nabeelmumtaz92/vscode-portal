@@ -145,7 +145,26 @@ function Scanner({ onCode, onCancel }: { onCode: (p: Pairing) => void; onCancel:
 
 // ---------- The phone UI ----------
 
+// Wireless updates: the phone UI is one web page. On launch, fetch the newest copy from the relay (scripts/deploy-relay.sh
+// publishes it as /app.html); if that fails or is slow, use the copy bundled in the app.
+function useLatestHtml(relay: string): string | null {
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 2500);
+    fetch(`${relay}/app.html`, { signal: ctl.signal, headers: { 'Cache-Control': 'no-cache' } })
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error('bad status'))))
+      .then((t) => (t.includes('<html') ? t : Promise.reject(new Error('not html'))))
+      .catch(() => WEB_HTML)
+      .then((t) => { clearTimeout(timer); if (!cancelled) setHtml(t); });
+    return () => { cancelled = true; clearTimeout(timer); ctl.abort(); };
+  }, [relay]);
+  return html;
+}
+
 function Portal({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void }) {
+  const pageHtml = useLatestHtml(pairing.relay);
   // Before the page's scripts run: hand it the pairing, and tell it it's inside the app
   const injected = useMemo(() => `
     try { localStorage.setItem('vsp.pair', ${JSON.stringify(`${pairing.key}.${pairing.room}`)}); } catch (e) {}
@@ -193,13 +212,14 @@ function Portal({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void 
     }
   }, [onUnpair, reply]);
 
+  if (pageHtml === null) return <View style={[styles.fill, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator color="#5ab4ff" /></View>;
   return (
     <SafeAreaView style={styles.fill} edges={Platform.OS === 'android' ? ['top', 'bottom'] : []}>
       <WebView
         ref={web}
         style={styles.fill}
         // The relay's address is the page's origin, so the phone UI reaches it exactly as it does in a browser
-        source={{ html: WEB_HTML, baseUrl: `${pairing.relay}/` }}
+        source={{ html: pageHtml, baseUrl: `${pairing.relay}/` }}
         originWhitelist={['*']}
         injectedJavaScriptBeforeContentLoaded={injected}
         onMessage={onMessage}

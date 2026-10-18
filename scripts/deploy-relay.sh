@@ -4,6 +4,7 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/.relay-deploy"
+node "$ROOT/mobile/scripts/build-web.js"  # also writes extension/web/app.html for the app's wireless updates
 rm -rf "$OUT" && mkdir -p "$OUT/web"
 cp "$ROOT/relay/server.js" "$ROOT/relay/package.json" "$OUT/"
 [ -f "$ROOT/relay/package-lock.json" ] && cp "$ROOT/relay/package-lock.json" "$OUT/"
