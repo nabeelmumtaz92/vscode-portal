@@ -185,3 +185,4 @@ body.chat-over #chat-grab span { width:38px; height:5px; border-radius:3px; back
 .hp-note { color:var(--dim); font-size:13px; margin:4px 0 0; }
 .hp-close { margin-top:14px; align-self:center; }
 #hostpick .login-card { display:flex; flex-direction:column; max-height:80vh; overflow:auto; }
+.hp-unpair { margin-top:6px; align-self:center; color:var(--red); font-size:13px; }

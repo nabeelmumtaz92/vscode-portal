@@ -50,6 +50,8 @@ const pairing = (() => {
 let ws = null, nextId = 1, connected = false, backoff = 500, relayKeys = null;
 const pending = new Map();
 
+// Inside the iPhone/Android app (see mobile/): messages to the native side
+const toApp = (m) => { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(m)); };
 function setConn(state, text) {
   $('#dot').className = state;
   if (text) $('#sub').textContent = text;
@@ -80,7 +82,10 @@ function onDrop(e) {
     localStorage.removeItem('vsp.token'); token = '';
     return showLogin(e.code === 4003 ? 'Too many wrong codes. Try again later.' : 'That code is not right.');
   }
-  if (pairing && e.code === 4003) return showLogin('This pairing is no longer valid. Scan the QR code in VS Code again.');
+  if (pairing && e.code === 4003) {
+    if (window.PORTAL_APP) return toApp({ type: 'pairing-invalid' });
+    return showLogin('This pairing is no longer valid. Scan the QR code in VS Code again.');
+  }
   setConn('off', pairing && e.code === 4404 ? 'Computer is offline. Retrying…' : 'Reconnecting…');
   setTimeout(connect, backoff); backoff = Math.min(backoff * 2, pairing ? 15000 : 8000);
 }
@@ -106,6 +111,9 @@ async function listHosts() {
 async function pickHost() {
   const hosts = await listHosts();
   if (!hosts.length) throw Object.assign(new Error('offline'), { code: 4404 });
+  // The app can ask for a window by name (Shortcuts, testing)
+  const named = window.PORTAL_APP && window.PORTAL_APP.host && hosts.find(h => h.name === window.PORTAL_APP.host);
+  if (named) { localStorage.setItem('vsp.host', named.id); return named.id; }
   const saved = localStorage.getItem('vsp.host');
   if (hosts.some(h => h.id === saved)) return saved;
   if (hosts.length === 1) return hosts[0].id;
@@ -123,7 +131,8 @@ function showWindows(hosts, current, choose, closable = true) {
   if (!hosts.length) list.append(h('p', { class: 'note' }, 'No VS Code windows are online. Open VS Code on your computer.'));
   box.append(h('div', { class: 'login-card' }, h('h2', {}, 'VS Code windows'),
     h('p', { class: 'hp-note' }, 'Every window with VSCode Portal running shows up here.'), list,
-    closable ? h('button', { class: 'chip hp-close', onclick: () => box.remove() }, 'Close') : null));
+    closable ? h('button', { class: 'chip hp-close', onclick: () => box.remove() }, 'Close') : null,
+    window.PORTAL_APP ? h('button', { class: 'hp-unpair', onclick: () => { box.remove(); toApp({ type: 'unpair' }); } }, 'Unpair this phone') : null));
   document.body.append(box);
 }
 function switchHost(id) {
@@ -188,6 +197,12 @@ function onEvent(m) {
       if (S.file) openFile(S.file, null, true);
       if (S.view === 'changes') loadChanges();
       Screen.onReady(m.screen);
+      // First connection: open the tab used last time (or the one the app asked for)
+      if (!S.opened) {
+        S.opened = true;
+        const want = (window.PORTAL_APP && window.PORTAL_APP.view) || localStorage.getItem('vsp.view');
+        if (want && want !== S.view && document.querySelector(`#view-${want}`)) show(want);
+      }
       break;
     case 'screen.event': Screen.onEvent(m); break;
     case 'doc':
@@ -224,6 +239,7 @@ function show(view) {
   document.body.classList.remove('chat-over');
   S.view = view;
   document.body.dataset.view = view;
+  try { localStorage.setItem('vsp.view', view); } catch {}
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`));
   document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   if (view === 'prompt') { $('[data-view=prompt]').classList.remove('badge'); updateCtx(); scrollChat(true); }

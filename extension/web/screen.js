@@ -503,6 +503,8 @@ const Screen = (() => {
         case 'cursor': cursor = m; updateRing(); if (trackpad) keepCursorInView(); break;
         case 'focus':
           macFocus = m.editable;
+          // The app can open the keyboard by itself; a browser needs a tap, so the button pulses instead
+          if (window.PORTAL_APP && macFocus && active && document.activeElement !== kbd) { resetKbd(); kbd.focus({ preventScroll: true }); }
           $('#scr-kbd-btn').classList.toggle('pulse', macFocus && document.activeElement !== kbd);
           break;
         case 'clipboard':
