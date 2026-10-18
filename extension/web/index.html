@@ -84,12 +84,8 @@
     <div id="scr-bar" class="bar">
       <button id="scr-mode" class="chip" title="Touch: tap where you want to click. Trackpad: drag to move the pointer, tap to click.">👆 Touch</button>
       <select id="scr-pick" title="Which screen"></select>
-      <select id="scr-quality" title="Picture quality">
-        <option value="low">Data saver</option>
-        <option value="medium" selected>Balanced</option>
-        <option value="high">Sharp</option>
-      </select>
       <span class="grow"></span>
+      <button id="scr-stat" class="chip" title="Stream status and settings"><i id="scr-lat-dot"></i><span id="scr-lat">– ms</span> ⚙︎</button>
       <button id="scr-full" class="icon" title="Full screen">⤢</button>
     </div>
     <div id="scr-stage">
@@ -104,6 +100,16 @@
       <button id="scr-kbd-btn" title="Keyboard">⌨️<span>Keyboard</span></button>
       <button id="scr-paste" title="Paste the phone's clipboard on the Mac">📋<span>Paste</span></button>
       <button id="scr-chat" title="Ask Claude">✨<span>Claude</span></button>
+    </div>
+    <div id="scr-panel" hidden>
+      <div class="sp-card">
+        <div class="sp-head"><b>Stream</b><span class="grow"></span><button id="sp-close" class="chip">Done</button></div>
+        <dl id="sp-status"></dl>
+        <label class="sp-slider">Quality <output id="sp-q-out"></output><input id="sp-q" type="range" min="30" max="100" step="5"></label>
+        <label class="sp-slider">Frame rate <output id="sp-fps-out"></output><input id="sp-fps" type="range" min="10" max="60" step="5"></label>
+        <label class="sp-toggle"><input id="sp-autokbd" type="checkbox"> Open and close the keyboard with text boxes on the Mac</label>
+        <p class="sp-note">Quality drops by itself on a weak connection and comes back when it improves.</p>
+      </div>
     </div>
     <textarea id="scr-kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Type on the Mac"></textarea>
   </section>

@@ -45,9 +45,47 @@ const Screen = (() => {
     const list = (st && st.displays) || [];
     pick.innerHTML = '';
     list.forEach((d, i) => pick.append(h('option', { value: i }, list.length > 1 ? `Screen ${i + 1}${d.main ? ' (main)' : ''}` : 'Screen')));
+    if (list.length > 1) pick.append(h('option', { value: 'all' }, 'All screens'));
     pick.hidden = list.length < 2;
-    if (st && st.settings) { pick.value = String(st.settings.screen); $('#scr-quality').value = st.settings.quality; }
+    if (st && st.settings) {
+      pick.value = String(st.settings.screen);
+      $('#sp-q').value = st.settings.quality; $('#sp-fps').value = st.settings.fps;
+      $('#sp-q-out').textContent = `${st.settings.quality}%`; $('#sp-fps-out').textContent = `${st.settings.fps} fps`;
+    }
   }
+
+  // ---------- status and settings ----------
+  let stats = null;
+  function renderStats() {
+    const lat = $('#scr-lat'), dot = $('#scr-lat-dot');
+    const rtt = stats && stats.rtt;
+    lat.textContent = rtt == null ? '– ms' : `${rtt} ms`;
+    dot.className = rtt == null ? '' : rtt < 120 ? 'good' : rtt < 300 ? 'ok' : 'bad';
+    if ($('#scr-panel').hidden) return;
+    const st = status || {};
+    const rows = [
+      ['Computer', st.computer || '–'],
+      ['Resolution', stats && stats.w ? `${stats.w} × ${stats.h}` : '–'],
+      ['Frame rate', stats ? `${stats.fps} fps (up to ${stats.targetFps})` : '–'],
+      ['Bitrate', stats ? `${(stats.kbps / 1000).toFixed(1)} Mbps${stats.bitrate < streamKbps(stats.quality) ? ' · lowered for the network' : ''}` : '–'],
+      ['Latency', rtt == null ? '–' : `${rtt} ms round trip${stats.congested ? ' · catching up' : ''}`],
+    ];
+    $('#sp-status').innerHTML = '';
+    for (const [k, v] of rows) $('#sp-status').append(h('dt', {}, k), h('dd', {}, v));
+  }
+  const streamKbps = (q) => Math.round(1000 + ((q - 30) / 70) * 9000);
+  $('#scr-stat').onclick = () => { $('#scr-panel').hidden = false; renderStats(); };
+  $('#sp-close').onclick = () => { $('#scr-panel').hidden = true; };
+  $('#scr-panel').addEventListener('click', (e) => { if (e.target.id === 'scr-panel') $('#scr-panel').hidden = true; });
+  const config = (data) => call('screen.config', data).then(st => { status = st; renderPickers(st); }).catch(err => toast(err.message));
+  $('#sp-q').oninput = (e) => { $('#sp-q-out').textContent = `${e.target.value}%`; };
+  $('#sp-q').onchange = (e) => config({ quality: Number(e.target.value) });
+  $('#sp-fps').oninput = (e) => { $('#sp-fps-out').textContent = `${e.target.value} fps`; };
+  $('#sp-fps').onchange = (e) => config({ fps: Number(e.target.value) });
+  // Open the keyboard when a text box on the Mac gets focus, close it when focus leaves (in the app)
+  let autoKbd = localStorage.getItem('vsp.autoKbd') !== '0';
+  $('#sp-autokbd').checked = autoKbd;
+  $('#sp-autokbd').onchange = (e) => { autoKbd = e.target.checked; localStorage.setItem('vsp.autoKbd', autoKbd ? '1' : '0'); };
 
   async function join() {
     if (!active || joined || !connected) return;
@@ -186,8 +224,9 @@ const Screen = (() => {
   const input = (kind, data = {}) => post('screen.input', { kind, ...data });
   const pointer = (kind, px, py, data = {}) => { const p = toRemote(px, py); if (p) input(kind, { ...p, ...data }); };
 
+  const buzz = (style) => { if (window.PORTAL_APP) toApp({ type: 'haptic', style }); else if (navigator.vibrate) navigator.vibrate(style === 'medium' ? 15 : 8); };
   function ripple(x, y, right) {
-    if (navigator.vibrate) navigator.vibrate(8);
+    buzz('light');
     const r = h('div', { class: `scr-ripple${right ? ' right' : ''}` });
     r.style.left = `${x}px`; r.style.top = `${y}px`;
     stage.append(r);
@@ -256,7 +295,7 @@ const Screen = (() => {
       g.pressTimer = setTimeout(() => {
         if (!g || g.kind !== 'one' || g.moved) return;
         g.pressed = true;
-        if (navigator.vibrate) navigator.vibrate(15);
+        buzz('medium');
         if (!trackpad) pointer('move', g.start.x, g.start.y);
       }, 400);
     } else if (ts.length === 2) {
@@ -453,12 +492,14 @@ const Screen = (() => {
   }
   setMode(trackpad);
   $('#scr-mode').onclick = () => { setMode(!trackpad); toast(trackpad ? 'Trackpad: drag to move the pointer, tap to click' : 'Touch: tap where you want to click'); };
-  $('#scr-pick').onchange = (e) => call('screen.config', { screen: Number(e.target.value) }).then(st => { status = st; zoom = 1; offX = offY = 0; applyTransform(); }).catch(err => toast(err.message));
-  $('#scr-quality').onchange = (e) => call('screen.config', { quality: e.target.value }).then(st => { status = st; }).catch(err => toast(err.message));
+  $('#scr-pick').onchange = (e) => {
+    const screen = e.target.value === 'all' ? 'all' : Number(e.target.value);
+    call('screen.config', { screen }).then(st => { status = st; zoom = 1; offX = offY = 0; applyTransform(); }).catch(err => toast(err.message));
+  };
   $('#scr-kbd-btn').onclick = () => { if (document.activeElement === kbd) kbd.blur(); else { resetKbd(); kbd.focus({ preventScroll: true }); } };
   $('#scr-paste').onclick = async () => {
     try {
-      const text = await navigator.clipboard.readText();
+      const text = window.PORTAL_APP ? await askApp('clipboard.get') : await navigator.clipboard.readText();
       if (!text) return toast('The clipboard is empty');
       input('clipboard', { text });
       setTimeout(() => key('v', ['command']), 150);
@@ -501,14 +542,20 @@ const Screen = (() => {
         case 'permissions': if (status) { status = { ...status, screen: m.screen, accessibility: m.accessibility }; explain(status); } break;
         case 'error': if (status) status = { ...status, error: m.message }; message(m.message); break;
         case 'cursor': cursor = m; updateRing(); if (trackpad) keepCursorInView(); break;
+        case 'stats': stats = m; renderStats(); break;
         case 'focus':
           macFocus = m.editable;
-          // The app can open the keyboard by itself; a browser needs a tap, so the button pulses instead
-          if (window.PORTAL_APP && macFocus && active && document.activeElement !== kbd) { resetKbd(); kbd.focus({ preventScroll: true }); }
+          // The app can open and close the keyboard by itself; a browser needs a tap, so the button pulses instead
+          if (window.PORTAL_APP && autoKbd && active) {
+            if (macFocus && document.activeElement !== kbd) { resetKbd(); kbd.focus({ preventScroll: true }); }
+            else if (!macFocus && document.activeElement === kbd) kbd.blur();
+          }
           $('#scr-kbd-btn').classList.toggle('pulse', macFocus && document.activeElement !== kbd);
           break;
         case 'clipboard':
           clipText = m.text;
+          // In the app, a copy on the Mac lands on the phone's clipboard right away
+          if (window.PORTAL_APP) { toApp({ type: 'clipboard.set', text: m.text }); toast('Copied from the Mac'); break; }
           $('#scr-clip span').textContent = `Copied on the Mac: ${m.text.slice(0, 40)}${m.text.length > 40 ? '…' : ''}`;
           $('#scr-clip').hidden = false;
           clearTimeout(this.clipTimer); this.clipTimer = setTimeout(() => { $('#scr-clip').hidden = true; }, 6000);

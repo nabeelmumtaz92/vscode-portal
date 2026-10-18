@@ -14,6 +14,7 @@
 // helper, which is VS Code.
 
 import AppKit
+import CoreImage
 import ApplicationServices
 import CoreMedia
 import Foundation
@@ -189,60 +190,117 @@ final class Encoder {
 
 // MARK: - Capture
 
-final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
-    private var stream: SCStream?
+/// Receives one display's frames and hands them to Capture with that display's id
+final class DisplayOutput: NSObject, SCStreamOutput {
+    let id: CGDirectDisplayID
+    weak var capture: Capture?
+    init(id: CGDirectDisplayID, capture: Capture) { self.id = id; self.capture = capture }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sample: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .screen, sample.isValid,
+              let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let statusRaw = attachments.first?[.status] as? Int,
+              SCFrameStatus(rawValue: statusRaw) == .complete,
+              let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
+        capture?.receive(id, buffer)
+    }
+}
+
+/// One display, or every display laid out as in System Settings > Displays (composited into one picture)
+final class Capture: NSObject, SCStreamDelegate {
+    private var streams: [SCStream] = []
+    private var outputs: [DisplayOutput] = []
     private var encoder: Encoder?
     private let queue = DispatchQueue(label: "portal.capture")
     private var lastBuffer: CVPixelBuffer?
     private var generation = 0
-    private(set) var display: DisplayInfo?
+    /// The part of the desktop the video shows, in global points (where input lands)
+    private(set) var region: CGRect?
 
-    func start(index: Int, fps: Int, kbps: Int, maxWidth: Int) {
+    // All screens: each display's latest frame and where it goes in the picture (pixels, top-left origin)
+    private var all = false
+    private var tiles: [CGDirectDisplayID: CGRect] = [:]
+    private var latest: [CGDirectDisplayID: CVPixelBuffer] = [:]
+    private var canvasPool: CVPixelBufferPool?
+    private var canvasSize = CGSize.zero
+    private var compositeTimer: DispatchSourceTimer?
+    private var dirty = false
+    private lazy var ciContext = CIContext(options: [.cacheIntermediates: false])
+
+    private static func even(_ v: Double) -> Int { max(2, Int(v) / 2 * 2) }
+
+    func start(screen: Any?, fps: Int, kbps: Int, maxWidth: Int) {
         stop()
         generation += 1
         let myGeneration = generation
         let displays = listDisplays()
         guard !displays.isEmpty else { return emit(["event": "error", "message": "No display found."]) }
-        let info = displays[min(max(0, index), displays.count - 1)]
-        display = info
+        let wantAll = (screen as? String) == "all" && displays.count > 1
+        let index = min(max(0, (screen as? Int) ?? 0), displays.count - 1)
+        let chosen = wantAll ? displays : [displays[index]]
+        let box = chosen.dropFirst().reduce(chosen[0].bounds) { $0.union($1.bounds) }
+        region = box
+
+        // Picture size: one display at its pixel size scaled to maxWidth; all of them in one box
+        var sizes: [CGDirectDisplayID: (Int, Int)] = [:]
+        var layout: [CGDirectDisplayID: CGRect] = [:]
+        var width = 0, height = 0
+        if wantAll {
+            let scale = min(2.0, Double(maxWidth) / box.width)
+            width = Self.even(box.width * scale); height = Self.even(box.height * scale)
+            for d in chosen {
+                let r = CGRect(x: (d.bounds.minX - box.minX) * scale, y: (d.bounds.minY - box.minY) * scale,
+                               width: Double(Self.even(d.bounds.width * scale)), height: Double(Self.even(d.bounds.height * scale)))
+                layout[d.id] = r
+                sizes[d.id] = (Int(r.width), Int(r.height))
+            }
+        } else {
+            let d = chosen[0]
+            let scale = min(1.0, Double(maxWidth) / Double(d.pixelWidth))
+            width = Self.even(Double(d.pixelWidth) * scale); height = Self.even(Double(d.pixelHeight) * scale)
+            sizes[d.id] = (width, height)
+        }
+
         Task {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard let scDisplay = content.displays.first(where: { $0.displayID == info.id }) else {
-                    return emit(["event": "error", "message": "That display isn't available."])
+                var streams: [SCStream] = [], outputs: [DisplayOutput] = []
+                for d in chosen {
+                    guard let scDisplay = content.displays.first(where: { $0.displayID == d.id }), let size = sizes[d.id] else {
+                        return emit(["event": "error", "message": "A display isn't available."])
+                    }
+                    let config = SCStreamConfiguration()
+                    config.width = size.0
+                    config.height = size.1
+                    config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
+                    // One display goes straight to the encoder; several are composited, which is simplest in BGRA
+                    config.pixelFormat = wantAll ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                    config.showsCursor = true
+                    config.queueDepth = 4
+                    let stream = SCStream(filter: SCContentFilter(display: scDisplay, excludingWindows: []), configuration: config, delegate: self)
+                    let output = DisplayOutput(id: d.id, capture: self)
+                    try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
+                    streams.append(stream); outputs.append(output)
                 }
-                // Scale to at most maxWidth pixels wide; H.264 needs even sizes
-                let scale = min(1.0, Double(maxWidth) / Double(info.pixelWidth))
-                let width = max(2, Int(Double(info.pixelWidth) * scale) / 2 * 2)
-                let height = max(2, Int(Double(info.pixelHeight) * scale) / 2 * 2)
-
-                let config = SCStreamConfiguration()
-                config.width = width
-                config.height = height
-                config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
-                config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-                config.showsCursor = true
-                config.queueDepth = 4
-                let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
-                let stream = SCStream(filter: filter, configuration: config, delegate: self)
-                try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-
                 guard let encoder = Encoder(width: width, height: height, fps: fps, kbps: kbps) else {
                     return emit(["event": "error", "message": "Couldn't start the video encoder."])
                 }
-                try await stream.startCapture()
+                for stream in streams { try await stream.startCapture() }
+                var current = false
                 queue.sync {
                     guard myGeneration == self.generation else { return }
-                    self.stream = stream
-                    self.encoder = encoder
+                    current = true
+                    self.streams = streams; self.outputs = outputs; self.encoder = encoder
+                    self.all = wantAll; self.tiles = layout; self.latest = [:]
+                    if wantAll { self.startCompositing(width: width, height: height, fps: fps) }
                 }
-                guard myGeneration == generation else {
-                    try? await stream.stopCapture()
+                guard current else {
+                    for stream in streams { try? await stream.stopCapture() }
                     encoder.close()
                     return
                 }
                 emit(["event": "capture", "state": "started", "w": width, "h": height,
-                      "screen": index, "fps": fps, "kbps": kbps])
+                      "screen": wantAll ? "all" : index as Any, "fps": fps, "kbps": kbps])
             } catch {
                 let denied = !CGPreflightScreenCaptureAccess()
                 emit(["event": "error", "permission": denied ? "screen" : NSNull(),
@@ -253,17 +311,68 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
+    /// On the capture queue: a new frame from one display
+    func receive(_ id: CGDirectDisplayID, _ buffer: CVPixelBuffer) {
+        if all {
+            latest[id] = buffer
+            dirty = true
+        } else {
+            lastBuffer = buffer
+            encoder?.encode(buffer)
+        }
+    }
+
+    private func startCompositing(width: Int, height: Int, fps: Int) {
+        canvasSize = CGSize(width: width, height: height)
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey: width, kCVPixelBufferHeightKey: height,
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+        ]
+        CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &canvasPool)
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: 1.0 / Double(fps))
+        timer.setEventHandler { [weak self] in self?.compositeIfChanged() }
+        timer.resume()
+        compositeTimer = timer
+    }
+
+    /// Draws every display's latest frame into one picture, only when something changed
+    private func compositeIfChanged() {
+        guard dirty, let pool = canvasPool, let encoder else { return }
+        dirty = false
+        var canvas: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &canvas)
+        guard let canvas else { return }
+        var image = CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: canvasSize))
+        for (id, rect) in tiles {
+            guard let buffer = latest[id] else { continue }
+            // Core Image's origin is bottom-left
+            let tile = CIImage(cvPixelBuffer: buffer)
+                .transformed(by: CGAffineTransform(translationX: rect.minX, y: canvasSize.height - rect.maxY))
+            image = tile.composited(over: image)
+        }
+        ciContext.render(image, to: canvas)
+        lastBuffer = canvas
+        encoder.encode(canvas)
+    }
+
     func stop() {
         generation += 1
-        let stream = self.stream
+        let streams = self.streams
         queue.sync {
-            self.stream = nil
+            self.compositeTimer?.cancel()
+            self.compositeTimer = nil
+            self.streams = []
+            self.outputs = []
             self.encoder?.close()
             self.encoder = nil
             self.lastBuffer = nil
+            self.latest = [:]
+            self.canvasPool = nil
         }
-        if let stream { Task { try? await stream.stopCapture() } }
-        display = nil
+        for stream in streams { Task { try? await stream.stopCapture() } }
+        region = nil
     }
 
     /// A phone joined or recovered: send a keyframe now, even if the screen isn't changing
@@ -276,16 +385,6 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func setBitrate(_ kbps: Int) {
         queue.async { self.encoder?.setBitrate(kbps) }
-    }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer sample: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sample.isValid, let encoder,
-              let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let statusRaw = attachments.first?[.status] as? Int,
-              SCFrameStatus(rawValue: statusRaw) == .complete,
-              let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
-        lastBuffer = buffer
-        encoder.encode(buffer)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -318,7 +417,7 @@ let modifierFlags: [String: CGEventFlags] = [
 
 /// The part of the desktop the video shows (global points)
 func currentRegion() -> CGRect {
-    capture.display?.bounds ?? listDisplays().first?.bounds ?? .zero
+    capture.region ?? listDisplays().first?.bounds ?? .zero
 }
 
 func pointerLocation() -> CGPoint {
@@ -522,7 +621,7 @@ func handle(_ cmd: [String: Any]) {
     switch cmd["cmd"] as? String {
     case "capture":
         startWatching()
-        capture.start(index: (cmd["screen"] as? Int) ?? 0, fps: min(60, max(5, (cmd["fps"] as? Int) ?? 30)),
+        capture.start(screen: cmd["screen"], fps: min(60, max(5, (cmd["fps"] as? Int) ?? 30)),
                       kbps: min(20000, max(300, (cmd["kbps"] as? Int) ?? 4000)),
                       maxWidth: min(3840, max(320, (cmd["maxWidth"] as? Int) ?? 1920)))
     case "stop":

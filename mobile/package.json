@@ -11,10 +11,13 @@
     "web": "node scripts/build-web.js"
   },
   "dependencies": {
+    "@react-native-clipboard/clipboard": "^1.16.3",
     "@react-native/new-app-screen": "0.88.0",
+    "@sayem314/react-native-keep-awake": "^2.0.0",
     "react": "19.3.0",
     "react-native": "0.88.0",
     "react-native-camera-kit": "^18.0.1",
+    "react-native-haptic-feedback": "^3.0.0",
     "react-native-keychain": "^10.0.0",
     "react-native-safe-area-context": "^5.10.1",
     "react-native-webview": "^14.0.1"

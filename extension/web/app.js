@@ -52,6 +52,20 @@ const pending = new Map();
 
 // Inside the iPhone/Android app (see mobile/): messages to the native side
 const toApp = (m) => { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(m)); };
+// A request the app answers (e.g. the phone's clipboard), resolved when it calls PortalNative.reply
+let nextAsk = 1;
+const asks = new Map();
+function askApp(type, data = {}) {
+  return new Promise((resolve) => { const id = nextAsk++; asks.set(id, resolve); toApp({ type, id, ...data }); setTimeout(() => { if (asks.delete(id)) resolve(null); }, 5000); });
+}
+window.PortalNative = {
+  reply(id, value) { const r = asks.get(id); if (r) { asks.delete(id); r(value); } },
+  // The app came back to the front: reconnect now if the connection dropped while it was away
+  resume() {
+    if (connected || (ws && ws.readyState !== 3)) return; // connected, or still connecting
+    backoff = 500; clearTimeout(window.reconnectTimer); connect();
+  },
+};
 function setConn(state, text) {
   $('#dot').className = state;
   if (text) $('#sub').textContent = text;
@@ -66,6 +80,7 @@ function onWire(text) {
 }
 function onDrop(e) {
   connected = false;
+  toApp({ type: 'awake', on: false });
   if (S.switching) {
     // Picked another window: reconnect at once, starting fresh
     S.switching = false;
@@ -87,7 +102,8 @@ function onDrop(e) {
     return showLogin('This pairing is no longer valid. Scan the QR code in VS Code again.');
   }
   setConn('off', pairing && e.code === 4404 ? 'Computer is offline. Retrying…' : 'Reconnecting…');
-  setTimeout(connect, backoff); backoff = Math.min(backoff * 2, pairing ? 15000 : 8000);
+  clearTimeout(window.reconnectTimer);
+  window.reconnectTimer = setTimeout(connect, backoff); backoff = Math.min(backoff * 2, pairing ? 15000 : 8000);
 }
 function connect() {
   if (pairing) return connectRelay();
@@ -190,6 +206,7 @@ function onEvent(m) {
   switch (m.type) {
     case 'ready':
       connected = true; backoff = 500; S.hello = m;
+      toApp({ type: 'awake', on: true });
       $('#ws-name').textContent = m.workspace;
       setConn('on', m.active ? `Mac: ${rel(m.active.path)}` : 'Connected');
       renderTabs(m.tabs); loadTree();

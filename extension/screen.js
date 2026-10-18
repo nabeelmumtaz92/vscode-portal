@@ -9,6 +9,7 @@
 // network raises it again. VideoToolbox changes bitrate on the fly, so there's no pause.
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 
 const PACKET_VIDEO = 1;
 const FLAG_KEYFRAME = 1;
@@ -21,11 +22,12 @@ const CONGESTION_WINDOW_MS = 15000;
 const CALM_BEFORE_RAISE_MS = 20000;
 const IDLE_STOP_MS = 60000;       // keep capturing briefly after the last phone leaves, so coming back is instant
 
-const QUALITY = {
-  low: { kbps: 1500, maxWidth: 1280, fps: 24 },
-  medium: { kbps: 4000, maxWidth: 1920, fps: 30 },
-  high: { kbps: 8000, maxWidth: 2560, fps: 30 },
-};
+// Quality 30-100 sets the bitrate and the largest picture width; all screens side by side get twice the width
+function streamParams({ quality, screen }) {
+  const t = (quality - 30) / 70;
+  const maxWidth = quality >= 85 ? 2560 : quality >= 50 ? 1920 : 1280;
+  return { kbps: Math.round(1000 + t * 9000), maxWidth: screen === 'all' ? Math.min(3840, maxWidth * 2) : maxWidth };
+}
 const NAMED_KEYS = new Set([
   'Return', 'Tab', 'Backspace', 'Delete', 'Escape', 'Space', 'Up', 'Down', 'Left', 'Right', 'Home', 'End', 'PageUp', 'PageDown',
   'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
@@ -64,18 +66,19 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
   let proc = null, buf = Buffer.alloc(0);
   let helperState = { screen: null, accessibility: null, displays: [], capture: null, error: null, focus: false };
   const viewers = new Map(); // client -> flow state
-  const settings = { screen: 0, quality: 'medium' };
-  let kbps = QUALITY.medium.kbps;
+  const settings = { screen: 0, quality: 70, fps: 30 };
+  let kbps = streamParams(settings).kbps; // lowered from the target while the network struggles
   let seq = 0, idleTimer = null, congestionTimes = [], lastCongestionAt = 0, lastBitrateChangeAt = 0;
   let recent = []; // frames since the last keyframe, for a phone that joins mid-stream
   let starting = false; // a capture was asked for and hasn't started yet
+  let lastMaxWidth = 0;
 
   const available = () => process.platform === 'darwin' && fs.existsSync(helperPath);
   const send = (cmd) => { if (proc) proc.stdin.write(JSON.stringify(cmd) + '\n'); };
   const status = () => ({
     enabled: enabled(), available: available(), screen: helperState.screen, accessibility: helperState.accessibility,
     displays: helperState.displays, capture: helperState.capture, focus: helperState.focus, error: helperState.error,
-    settings: { ...settings }, kbps,
+    settings: { ...settings }, kbps, computer: os.hostname().replace(/\.local$/, ''),
   });
   const tell = (msg) => { for (const c of viewers.keys()) c.send({ type: 'screen.event', ...msg }); };
 
@@ -154,6 +157,7 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
     const s = packet.readUInt32BE(4);
     f.inflight.push({ seq: s, at: now, bytes: packet.length });
     f.inflightBytes += packet.length;
+    f.frames++; f.bytes += packet.length;
     client.sendBinary(packet);
   }
 
@@ -186,7 +190,7 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
 
   // Calm network: step the bitrate back up towards the chosen quality
   const calmTimer = setInterval(() => {
-    const target = QUALITY[settings.quality].kbps;
+    const target = streamParams(settings).kbps;
     const now = Date.now();
     if (!viewers.size || kbps >= target) return;
     if (now - lastCongestionAt < CALM_BEFORE_RAISE_MS || now - lastBitrateChangeAt < CALM_BEFORE_RAISE_MS) return;
@@ -196,11 +200,22 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
   }, 5000);
   calmTimer.unref?.();
 
+  // Once a second, each phone hears how its stream is doing (for the status panel and the latency readout)
+  const statsTimer = setInterval(() => {
+    for (const [client, f] of viewers) {
+      client.send({ type: 'screen.event', event: 'stats', fps: f.frames, kbps: Math.round(f.bytes * 8 / 1000), rtt: f.lastRtt,
+        congested: f.congested, w: helperState.capture && helperState.capture.w, h: helperState.capture && helperState.capture.h,
+        targetFps: settings.fps, quality: settings.quality, bitrate: kbps });
+      f.frames = 0; f.bytes = 0;
+    }
+  }, 1000);
+  statsTimer.unref?.();
+
   function startCapture() {
-    const q = QUALITY[settings.quality];
     startHelper();
     starting = true;
-    send({ cmd: 'capture', screen: settings.screen, fps: q.fps, kbps, maxWidth: q.maxWidth });
+    lastMaxWidth = streamParams(settings).maxWidth;
+    send({ cmd: 'capture', screen: settings.screen, fps: settings.fps, kbps, maxWidth: lastMaxWidth });
   }
 
   return {
@@ -211,7 +226,7 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
       if (!enabled()) throw new Error('Screen sharing is off. On the Mac, turn on VSCode Portal › Screen in VS Code settings.');
       if (!available()) throw new Error('Screen sharing needs a Mac.');
       clearTimeout(idleTimer);
-      viewers.set(client, { inflight: [], inflightBytes: 0, congested: false, needsKey: true, baseRtt: 200, rttMin: Infinity, rttSince: Date.now() });
+      viewers.set(client, { inflight: [], inflightBytes: 0, congested: false, needsKey: true, baseRtt: 200, rttMin: Infinity, rttSince: Date.now(), frames: 0, bytes: 0, lastRtt: null });
       if (!proc || (!helperState.capture && !starting)) startCapture();
       // Start from the latest keyframe right away instead of waiting for the next one
       const f = viewers.get(client);
@@ -239,6 +254,7 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
         if (item.seq === s) {
           // Best round trip over the last 30 s: the network's delay with nothing queued
           const rtt = now - item.at;
+          f.lastRtt = rtt;
           f.rttMin = Math.min(f.rttMin, rtt);
           f.baseRtt = Math.min(f.baseRtt, rtt);
           if (now - f.rttSince > RTT_WINDOW_MS) { f.baseRtt = Math.min(f.rttMin, 400); f.rttMin = Infinity; f.rttSince = now; }
@@ -246,13 +262,22 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
       }
       if (f.congested && !f.inflight.length) { f.congested = false; f.needsKey = true; send({ cmd: 'keyframe' }); }
     },
-    configure({ screen, quality }, client) {
+    configure({ screen, quality, fps }, client) {
       let restart = false;
-      if (Number.isInteger(screen) && screen >= 0 && screen < Math.max(1, helperState.displays.length) && screen !== settings.screen) {
-        settings.screen = screen; restart = true;
+      const validScreen = (Number.isInteger(screen) && screen >= 0 && screen < Math.max(1, helperState.displays.length))
+        || (screen === 'all' && helperState.displays.length > 1);
+      if (validScreen && screen !== settings.screen) { settings.screen = screen; restart = true; }
+      if (Number.isFinite(quality)) {
+        const q = Math.round(Math.min(100, Math.max(30, quality)));
+        if (q !== settings.quality) {
+          settings.quality = q; kbps = streamParams(settings).kbps;
+          // Bitrate changes on the fly; only a different picture size needs a restart
+          if (streamParams({ ...settings }).maxWidth !== lastMaxWidth) restart = true; else send({ cmd: 'bitrate', kbps });
+        }
       }
-      if (QUALITY[quality] && quality !== settings.quality) {
-        settings.quality = quality; kbps = QUALITY[quality].kbps; restart = true;
+      if (Number.isFinite(fps)) {
+        const f = Math.round(Math.min(60, Math.max(10, fps)));
+        if (f !== settings.fps) { settings.fps = f; restart = true; }
       }
       if (restart && viewers.size) {
         recent = [];
@@ -273,6 +298,7 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
     },
     close() {
       clearInterval(calmTimer);
+      clearInterval(statsTimer);
       clearTimeout(idleTimer);
       viewers.clear();
       if (proc) { proc.kill(); proc = null; }
@@ -280,4 +306,4 @@ function createScreen({ helperPath, enabled = () => true, log = () => {} }) {
   };
 }
 
-module.exports = { createScreen, sanitizeInput, QUALITY };
+module.exports = { createScreen, sanitizeInput, streamParams };

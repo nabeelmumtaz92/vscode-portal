@@ -7,6 +7,7 @@
  * end-to-end encrypted relay named in the link.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, Share } from 'react-native';
 import {
   ActivityIndicator, Alert, Linking, PermissionsAndroid, Platform, Pressable, Settings, StatusBar, StyleSheet, Text, TextInput,
   View,
@@ -15,6 +16,9 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { Camera, CameraType } from 'react-native-camera-kit';
 import * as Keychain from 'react-native-keychain';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { trigger as haptic } from 'react-native-haptic-feedback';
+import { activateKeepAwake, deactivateKeepAwake } from '@sayem314/react-native-keep-awake';
 import WEB_HTML from './src/webBundle';
 
 type Pairing = { relay: string; key: string; room: string };
@@ -148,10 +152,35 @@ function Portal({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void 
     window.PORTAL_APP = { platform: ${JSON.stringify(Platform.OS)}, view: ${JSON.stringify((Platform.OS === 'ios' && Settings.get('view')) || null)}, host: ${JSON.stringify((Platform.OS === 'ios' && Settings.get('host')) || null)} };
     true;`, [pairing]);
 
+  const web = useRef<React.ComponentRef<typeof WebView>>(null);
+  // Answers a request from the page (see askApp in app.js)
+  const reply = useCallback((id: number, value: unknown) => {
+    web.current?.injectJavaScript(`window.PortalNative && window.PortalNative.reply(${JSON.stringify(id)}, ${JSON.stringify(value)}); true;`);
+  }, []);
+  // Back in the app after being away: reconnect right away instead of waiting for the retry timer
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') web.current?.injectJavaScript('window.PortalNative && window.PortalNative.resume(); true;');
+    });
+    return () => { sub.remove(); deactivateKeepAwake(); };
+  }, []);
+
   const onMessage = useCallback((e: WebViewMessageEvent) => {
-    let m: { type?: string; url?: string };
+    let m: { type?: string; url?: string; id?: number; text?: string; style?: string; on?: boolean; image?: string; title?: string };
     try { m = JSON.parse(e.nativeEvent.data); } catch { return; }
-    if (m.type === 'unpair') {
+    if (m.type === 'haptic') {
+      haptic(m.style === 'medium' ? 'impactMedium' : m.style === 'heavy' ? 'impactHeavy' : 'impactLight', { enableVibrateFallback: false });
+    } else if (m.type === 'clipboard.set' && typeof m.text === 'string') {
+      Clipboard.setString(m.text);
+    } else if (m.type === 'clipboard.get' && typeof m.id === 'number') {
+      const id = m.id;
+      Clipboard.getString().then((t) => reply(id, t)).catch(() => reply(id, ''));
+    } else if (m.type === 'awake') {
+      // Keep the screen on while connected, like a video call
+      if (m.on) activateKeepAwake(); else deactivateKeepAwake();
+    } else if (m.type === 'share') {
+      Share.share(m.image ? { url: m.image, title: m.title } : { message: m.text || '', title: m.title }).catch(() => {});
+    } else if (m.type === 'unpair') {
       Alert.alert('Unpair this phone?', 'You\'ll need to scan the QR code in VS Code again.', [
         { text: 'Cancel', style: 'cancel' }, { text: 'Unpair', style: 'destructive', onPress: onUnpair },
       ]);
@@ -160,11 +189,12 @@ function Portal({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void 
     } else if (m.type === 'open' && m.url && /^https?:\/\//.test(m.url)) {
       Linking.openURL(m.url);
     }
-  }, [onUnpair]);
+  }, [onUnpair, reply]);
 
   return (
     <SafeAreaView style={styles.fill} edges={Platform.OS === 'android' ? ['top', 'bottom'] : []}>
       <WebView
+        ref={web}
         style={styles.fill}
         // The relay's address is the page's origin, so the phone UI reaches it exactly as it does in a browser
         source={{ html: WEB_HTML, baseUrl: `${pairing.relay}/` }}
