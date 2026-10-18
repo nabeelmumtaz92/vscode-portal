@@ -41,22 +41,29 @@
 
   <section id="view-prompt" class="view">
     <button id="chat-grab" title="Back to the screen"><span></span>Minimize</button>
+    <div class="bar chat-bar">
+      <button id="chats-btn" class="chip" title="Your chats">☰ Chats</button>
+      <div id="chat-title" class="grow"></div>
+      <button id="shot-btn" class="icon" title="Screenshot the Mac into this chat">📸</button>
+      <button id="new-chat" class="chip">＋ New</button>
+    </div>
     <div id="chat"></div>
     <div id="composer">
       <div class="row">
         <select id="mode">
+          <option value="mac">🖥 Mac</option>
           <option value="edits">Auto-edit</option>
           <option value="full">Full access</option>
           <option value="plan">Plan only</option>
         </select>
         <button id="ctx" class="chip" hidden></button>
         <span class="grow"></span>
-        <button id="new-chat" class="chip">New chat</button>
+        <button id="stop" class="chip stop" hidden>■ Stop</button>
       </div>
       <div id="attachments" class="row"></div>
       <div class="row">
-        <button id="attach" class="chip" title="Attach photo or video">📎+</button>
-        <input id="attach-file" type="file" accept="image/*,video/*" multiple hidden>
+        <button id="attach" class="chip" title="Attach photos, videos or documents">📎+</button>
+        <input id="attach-file" type="file" accept="image/*,video/*,.pdf,.txt,.md,.doc,.docx,.rtf,.csv,.json" multiple hidden>
         <textarea id="prompt-input" rows="1" placeholder="Ask Claude to do something in this project…"></textarea>
         <button id="send" class="primary">Send</button>
       </div>
@@ -135,6 +142,19 @@
     <button id="login-go" class="primary">Connect</button>
   </div>
 </div>
+<div id="chats" hidden>
+  <div class="chats-card">
+    <div class="chats-head"><b>Chats</b><span class="grow"></span><button id="chats-close" class="chip">Close</button></div>
+    <input id="chats-search" type="search" placeholder="Search chats" autocomplete="off" autocapitalize="off">
+    <div id="chats-list"></div>
+    <div class="chats-settings">
+      <label><input id="set-autoapprove" type="checkbox"> Run safe Terminal commands without asking (risky ones always ask)</label>
+      <label><input id="set-showactions" type="checkbox"> Show actions: the pointer glides and ripples before each click</label>
+    </div>
+  </div>
+</div>
+<div id="viewer" hidden><div id="viewer-scroll"><img id="viewer-img" alt=""></div>
+  <div class="viewer-bar"><span id="viewer-cap"></span><span class="grow"></span><button id="viewer-share" class="chip">Share</button><button id="viewer-close" class="chip">Close</button></div></div>
 <div id="toast" hidden></div>
 
 <script src="editor.bundle.js"></script>

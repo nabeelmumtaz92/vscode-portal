@@ -210,7 +210,10 @@ function onEvent(m) {
       $('#ws-name').textContent = m.workspace;
       setConn('on', m.active ? `Mac: ${rel(m.active.path)}` : 'Connected');
       renderTabs(m.tabs); loadTree();
-      S.chatRunning = m.chat.running; rebuildChat(m.chat.events); updateSend();
+      S.running = new Set((m.chats && m.chats.running) || []);
+      applyAgentSettings(m.chats && m.chats.settings);
+      if (m.chats && !m.chats.mac) { $('#mode option[value=mac]')?.remove(); if ($('#mode').value === 'mac') $('#mode').value = 'edits'; }
+      openChat(S.chat);
       if (S.file) openFile(S.file, null, true);
       if (S.view === 'changes') loadChanges();
       Screen.onReady(m.screen);
@@ -235,12 +238,20 @@ function onEvent(m) {
       }
       break;
     case 'files.changed': if (S.view === 'changes') debounce('changes', loadChanges, 800); break;
-    case 'chat.event': chatEvent(m.event, true); break;
+    case 'chat.event':
+      if (m.chat === S.chat) chatEvent(m.event, true);
+      else if (m.event.type === 'result' || m.event.type === 'portal.approve') $('#chats-btn').classList.add('badge');
+      break;
+    case 'chat.deleted': if (m.chat === S.chat) newChat(); break;
+    case 'agent.settings': applyAgentSettings(m.settings); break;
     case 'chat.status':
+      if (m.running) S.running.add(m.chat); else S.running.delete(m.chat);
+      if (!$('#chats').hidden) debounce('chats', renderChats, 300);
+      if (m.chat !== S.chat) { if (!m.running) toast(`Done: ${m.title || 'a task'}`); break; }
+      if (m.title) $('#chat-title').textContent = m.title;
       S.chatRunning = m.running; updateSend();
       if (!m.running) { removeThinking(); if (S.view !== 'prompt') $('[data-view=prompt]').classList.add('badge'); }
       break;
-    case 'chat.reset': rebuildChat([]); break;
     case 'run.out': if (m.runId === S.runId) termWrite(m.data); break;
     case 'run.exit':
       if (m.runId === S.runId) { termWrite(`\n[exit ${m.code}]\n`, 'exit'); S.runId = null; $('#term-stop').hidden = true; }
@@ -391,19 +402,23 @@ function scrollChat(force) {
   const nearBottom = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 160;
   if (force || nearBottom) requestAnimationFrame(() => { chatEl.scrollTop = chatEl.scrollHeight; });
 }
+const MODE_NAMES = { mac: '🖥 Mac', edits: 'Auto-edit', full: 'Full access', plan: 'Plan only' };
 function emptyChat() {
   chatEl.innerHTML = '';
   const s = (t) => h('button', { onclick: () => { $('#prompt-input').value = t; send(); } }, t);
-  chatEl.append(h('div', { class: 'empty-hint' }, h('b', {}, '✨'), 'Claude Code, running in this project on your Mac.'),
-    h('div', { class: 'suggest' },
-      s('Explain what this file does'), s('Fix the problems VS Code is showing'),
-      s('Run the tests and fix any failures'), s('Review my uncommitted changes'),
-      s('Commit and push my changes with a good message')));
+  const mac = $('#mode').value === 'mac';
+  chatEl.append(h('div', { class: 'empty-hint' }, h('b', {}, '✨'),
+    mac ? 'Tell your Mac what to do. Claude does it while you watch on the Screen tab.' : 'Claude Code, running in this project on your Mac.'),
+  h('div', { class: 'suggest' }, ...(mac
+    ? ['Open my Downloads folder', 'What\'s on my screen right now?', 'Pause the music', 'Close the front window', 'Turn the volume down a bit']
+    : ['Explain what this file does', 'Fix the problems VS Code is showing', 'Run the tests and fix any failures', 'Review my uncommitted changes', 'Commit and push my changes with a good message']).map(s)));
 }
-function rebuildChat(events) {
-  chatEl.innerHTML = ''; toolCards.clear(); liveEl = null; liveText = '';
+function rebuildChat(events, hidden = 0) {
+  chatEl.innerHTML = ''; toolCards.clear(); approvalBoxes.clear(); liveEl = null; liveText = '';
   if (!events.length) emptyChat();
+  if (hidden) chatEl.append(h('button', { class: 'chip older', onclick: () => openChat(S.chat, 2000) }, `Show ${hidden} earlier messages`));
   for (const e of events) chatEvent(e, false);
+  for (const p of pendingSends) chatEl.append(p.el);
   if (S.chatRunning) addThinking();
   scrollChat(true);
 }
@@ -411,16 +426,26 @@ function addThinking() { removeThinking(); chatEl.append(h('div', { class: 'thin
 function removeThinking() { const t = $('#thinking'); if (t) t.remove(); }
 function append(el) { $('.empty-hint') && (chatEl.innerHTML = ''); const t = $('#thinking'); chatEl.insertBefore(el, t); scrollChat(); }
 
+// The Mac agent's tools arrive as mcp__portal__<name>
+const toolName = (name) => String(name).replace(/^mcp__portal__/, '');
 function toolSummary(name, input = {}) {
+  name = toolName(name);
+  if (name === 'computer') {
+    const a = input.action || '';
+    return a + (input.text ? ` "${String(input.text).slice(0, 40)}"` : '') + (input.coordinate ? ` @ ${input.coordinate.join(',')}` : '');
+  }
+  if (name === 'run_shell') return input.command;
   if (input.file_path) return rel(input.file_path);
   if (name === 'Bash') return input.command;
   if (input.pattern) return input.pattern;
   if (name === 'TodoWrite') return `${(input.todos || []).length} tasks`;
   if (input.url) return input.url;
   if (input.description) return input.description;
-  return '';
+  const first = Object.values(input).find(v => typeof v === 'string' && v);
+  return first || '';
 }
 function toolBody(name, input = {}) {
+  name = toolName(name);
   if (name === 'Edit' || name === 'MultiEdit') {
     const edits = input.edits || [input];
     return h('pre', { class: 'diff' }, ...edits.flatMap(e => [
@@ -430,13 +455,21 @@ function toolBody(name, input = {}) {
   }
   if (name === 'Write') return h('pre', {}, String(input.content || '').split('\n').slice(0, 60).join('\n'));
   if (name === 'TodoWrite') return h('div', {}, ...(input.todos || []).map(t => h('div', {}, `${t.status === 'completed' ? '☑' : t.status === 'in_progress' ? '◐' : '☐'} ${t.content}`)));
-  if (name === 'Bash') return h('pre', {}, input.command);
+  if (name === 'Bash' || name === 'run_shell') return h('pre', {}, input.command);
   return h('pre', {}, JSON.stringify(input, null, 2));
+}
+const approvalBoxes = new Map(); // request id -> box
+function shotEl(e) {
+  if (!e.image) return h('div', { class: 'note' }, `🖼 ${e.caption || 'Screenshot'} (older pictures aren't kept)`);
+  const src = `data:image/jpeg;base64,${e.image}`;
+  return h('div', { class: `shot${e.live ? ' live' : ''}` }, h('img', { src, onclick: () => openViewer(src, e.caption) }), h('span', {}, e.caption || ''));
 }
 function chatEvent(e, live) {
   if (e.type === 'portal.user') {
-    append(h('div', { class: 'msg user' }, e.text, ...(e.attachments || []).map(a => h('div', { class: 'tag' }, `${a.kind === 'video' ? '🎞' : '🖼'} ${a.name}${a.frames ? ` (${a.frames} frames)` : ''}`)), h('span', { class: 'tag' }, [
-      { edits: 'Auto-edit', full: 'Full access', plan: 'Plan only' }[e.mode], e.context ? ` · ${base(e.context)}` : ''].join(''))));
+    confirmSend(e.text);
+    append(h('div', { class: `msg user${e.addendum ? ' addendum' : ''}` }, e.text,
+      ...(e.attachments || []).map(a => h('div', { class: 'tag' }, `${a.kind === 'video' ? '🎞' : a.kind === 'image' ? '🖼' : '📄'} ${a.name}${a.frames ? ` (${a.frames} frames)` : ''}`)),
+      h('span', { class: 'tag' }, e.addendum ? '+ added to the running task' : [MODE_NAMES[e.mode] || '', e.context ? ` · ${base(e.context)}` : ''].join(''))));
     if (live) addThinking();
   } else if (e.type === 'stream_event') {
     const ev = e.event || {};
@@ -453,7 +486,7 @@ function chatEvent(e, live) {
         const state = h('span', { class: 'tstate' }, '⏳');
         const card = h('div', { class: 'tool' },
           h('div', { class: 'tool-head', onclick: () => card.classList.toggle('open') },
-            h('span', { class: 'tname' }, c.name), h('span', { class: 'tsum' }, toolSummary(c.name, c.input)), state), body);
+            h('span', { class: 'tname' }, toolName(c.name)), h('span', { class: 'tsum' }, toolSummary(c.name, c.input)), state), body);
         card._state = state; card._body = body;
         toolCards.set(c.id, card); append(card);
       }
@@ -471,24 +504,132 @@ function chatEvent(e, live) {
     removeThinking();
     const secs = Math.round((e.duration_ms || 0) / 1000);
     const cost = e.total_cost_usd ? ` · $${e.total_cost_usd.toFixed(2)}` : '';
-    append(h('div', { class: `note ${e.is_error ? 'err' : ''}` }, `${e.is_error ? 'Stopped with an error' : 'Done'} · ${secs}s${cost}`));
+    append(h('div', { class: `note end ${e.is_error ? 'err' : ''}` }, `${e.is_error ? 'Stopped with an error' : 'End of task'} · ${secs}s${cost}`));
     const denied = e.permission_denials || [];
     if (denied.length) append(h('div', { class: 'note err' }, `Claude wasn't allowed to: ${denied.map(d => toolSummary(d.tool_name, d.tool_input) || d.tool_name).join(', ')}. Switch to Full access to allow that.`));
+  } else if (e.type === 'portal.image') {
+    append(shotEl(e));
+  } else if (e.type === 'portal.approve') {
+    const buttons = h('div', { class: 'row' },
+      h('button', { class: 'primary small', onclick: () => answer(e.rid, true) }, 'Allow'),
+      h('button', { class: 'chip', onclick: () => answer(e.rid, false) }, 'Deny'));
+    const box = h('div', { class: 'approve' }, h('div', {}, `Wants to run a Terminal command: ${e.reason}`), h('pre', {}, e.command), buttons);
+    box._buttons = buttons;
+    approvalBoxes.set(e.rid, box); append(box);
+    if (live) toast('Claude needs your OK', 3000);
+  } else if (e.type === 'portal.approved') {
+    const box = approvalBoxes.get(e.rid);
+    if (box) box._buttons.replaceWith(h('div', { class: 'done' }, e.allowed ? '✓ Allowed' : '✗ Denied'));
   } else if (e.type === 'portal.error') {
     removeThinking(); append(h('div', { class: 'note err' }, e.text));
   } else if (e.type === 'portal.stopped') {
     removeThinking(); append(h('div', { class: 'note' }, 'Stopped'));
   }
 }
+const answer = (rid, allowed) => call('agent.answer', { rid, allowed }).catch(err => toast(err.message));
+
+// ---------- chats ----------
+S.chat = localStorage.getItem('vsp.chat') || null;
+S.running = new Set();
+function setChat(id, title) {
+  S.chat = id;
+  if (id) localStorage.setItem('vsp.chat', id); else localStorage.removeItem('vsp.chat');
+  $('#chat-title').textContent = title || (id ? '' : 'New chat');
+}
+async function openChat(id, limit) {
+  if (!id) { setChat(null); S.chatRunning = false; updateSend(); return rebuildChat([]); }
+  try {
+    const c = await call('chat.open', { chat: id, limit });
+    setChat(c.id, c.title);
+    S.chatRunning = c.running; updateSend();
+    rebuildChat(c.events, c.hidden);
+  } catch { openChat(null); }
+}
+function newChat() { pendingSends.splice(0); openChat(null); $('#prompt-input').focus(); }
+$('#new-chat').onclick = newChat;
+
+async function renderChats() {
+  const list = $('#chats-list');
+  try {
+    const items = await call('chat.list', { query: $('#chats-search').value.trim() });
+    list.innerHTML = '';
+    if (!items.length) list.append(h('div', { class: 'note' }, $('#chats-search').value ? 'No chats match.' : 'No chats yet.'));
+    for (const c of items) {
+      const del = h('button', { class: 'ci-del', onclick: async () => {
+        try { await call('chat.delete', { chat: c.id }); if (c.id === S.chat) newChat(); renderChats(); } catch (e) { toast(e.message); }
+      } }, 'Delete');
+      const main = h('div', { class: 'ci-main', onclick: () => { if (item.classList.contains('swiped')) return item.classList.remove('swiped'); closeChats(); openChat(c.id); } },
+        h('b', {}, c.title), h('span', {}, c.running || S.running.has(c.id) ? h('i', { class: 'run' }, '● running · ') : '', when(c.updated), c.preview ? ` · ${c.preview}` : ''));
+      const item = h('div', { class: `chat-item${c.id === S.chat ? ' current' : ''}` }, del, main);
+      // Swipe left to reveal Delete
+      let x0 = null;
+      main.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+      main.addEventListener('touchmove', (e) => { if (x0 !== null && x0 - e.touches[0].clientX > 40) { item.classList.add('swiped'); x0 = null; } }, { passive: true });
+      main.addEventListener('contextmenu', (e) => { e.preventDefault(); item.classList.toggle('swiped'); });
+      list.append(item);
+    }
+  } catch (e) { toast(e.message); }
+}
+function when(t) {
+  const d = new Date(t), now = new Date();
+  return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+function openChats() { $('#chats').hidden = false; $('#chats-btn').classList.remove('badge'); renderChats(); }
+function closeChats() { $('#chats').hidden = true; }
+$('#chats-btn').onclick = openChats;
+$('#chats-close').onclick = closeChats;
+$('#chats').addEventListener('click', (e) => { if (e.target.id === 'chats') closeChats(); });
+$('#chats-search').oninput = () => debounce('chats', renderChats, 250);
+function applyAgentSettings(st) {
+  if (!st) return;
+  $('#set-autoapprove').checked = !!st.autoApproveShell; $('#set-showactions').checked = !!st.showActions;
+}
+$('#set-autoapprove').onchange = (e) => call('agent.settings', { autoApproveShell: e.target.checked }).catch(err => toast(err.message));
+$('#set-showactions').onchange = (e) => call('agent.settings', { showActions: e.target.checked }).catch(err => toast(err.message));
+$('#shot-btn').onclick = async () => {
+  try { const r = await call('chat.screenshot', { chat: S.chat }); if (r.chat !== S.chat) openChat(r.chat); }
+  catch (e) { toast(e.message); }
+};
+
+// ---------- picture viewer ----------
+function openViewer(src, caption) {
+  const img = $('#viewer-img'); img.src = src; img.style.width = ''; img.style.maxWidth = ''; img.style.maxHeight = '';
+  $('#viewer-cap').textContent = caption || ''; $('#viewer').hidden = false;
+}
+$('#viewer-close').onclick = () => { $('#viewer').hidden = true; };
+$('#viewer-share').onclick = async () => {
+  const src = $('#viewer-img').src;
+  if (window.PORTAL_APP) return toApp({ type: 'share', image: src, title: $('#viewer-cap').textContent });
+  try {
+    const blob = await (await fetch(src)).blob();
+    const file = new File([blob], 'screenshot.jpg', { type: 'image/jpeg' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+    else { const a = h('a', { href: src, download: 'screenshot.jpg' }); a.click(); }
+  } catch {}
+};
+// Pinch to zoom; the picture scrolls when bigger than the screen
+(() => {
+  const box = $('#viewer-scroll'), img = $('#viewer-img');
+  let d0 = 0, z0 = 1, z = 1;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const setZoom = (v) => { z = Math.min(5, Math.max(1, v)); img.style.maxWidth = z > 1 ? 'none' : ''; img.style.maxHeight = z > 1 ? 'none' : ''; img.style.width = z > 1 ? `${z * box.clientWidth}px` : ''; };
+  box.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { d0 = dist(e.touches); z0 = z; } }, { passive: true });
+  box.addEventListener('touchmove', (e) => { if (e.touches.length === 2 && d0) { e.preventDefault(); setZoom(z0 * dist(e.touches) / d0); } }, { passive: false });
+  box.addEventListener('touchend', () => { d0 = 0; });
+  box.addEventListener('dblclick', () => setZoom(z > 1 ? 1 : 2.5));
+})();
+
 function updateCtx() {
   const c = $('#ctx');
   c.hidden = !S.file; c.textContent = `📎 ${S.file ? base(S.file) : ''}`; c.classList.toggle('on', S.ctxOn);
 }
 $('#ctx').onclick = () => { S.ctxOn = !S.ctxOn; updateCtx(); };
+// While Claude works, Send adds to the task (it reads it at its next step) and Stop ends it
 function updateSend() {
-  const b = $('#send');
-  b.textContent = S.chatRunning ? 'Stop' : 'Send'; b.classList.toggle('stop', S.chatRunning);
+  $('#send').textContent = S.chatRunning ? 'Add' : 'Send';
+  $('#stop').hidden = !S.chatRunning;
 }
+$('#stop').onclick = () => S.chat && call('prompt.stop', { chat: S.chat }).catch(e => toast(e.message));
 const pendingAtt = []; // {id, name, kind, status}
 function renderAtt() {
   const box = $('#attachments'); box.innerHTML = ''; box.hidden = !pendingAtt.length;
@@ -518,30 +659,53 @@ async function uploadFile(file) {
 $('#attach').onclick = () => $('#attach-file').click();
 $('#attach-file').onchange = (e) => { for (const f of e.target.files) uploadFile(f); e.target.value = ''; };
 
-async function send() {
-  if (S.chatRunning) return call('prompt.stop').catch(e => toast(e.message));
-  const input = $('#prompt-input'); const text = input.value.trim(); if (!text) return;
-  if (pendingAtt.some(a => !a.ready && !a.err)) return toast('Still uploading…');
-  const attachments = pendingAtt.filter(a => a.ready).map(a => a.id);
-  const mode = $('#mode').value;
+// A message shows at once (faded) until the Mac confirms it; if that fails it says so and can be sent again
+const pendingSends = [];
+function confirmSend(text) {
+  const i = pendingSends.findIndex(p => p.text.trim() === String(text || '').trim());
+  if (i < 0) return;
+  pendingSends[i].el.remove();
+  pendingSends.splice(i, 1);
+}
+async function send(retry) {
+  const input = $('#prompt-input');
+  const text = retry ? retry.text : input.value.trim(); if (!text) return;
+  if (!retry && pendingAtt.some(a => !a.ready && !a.err)) return toast('Still uploading…');
+  const attachments = retry ? retry.attachments : pendingAtt.filter(a => a.ready).map(a => a.id);
+  const mode = retry ? retry.mode : $('#mode').value;
   if (mode === 'full' && !localStorage.getItem('vsp.fullOk')) {
     if (!confirm('Full access lets Claude run any command on your Mac without asking. Continue?')) return;
     localStorage.setItem('vsp.fullOk', '1');
   }
   let context = null;
-  if (S.ctxOn && S.file) { const sel = editor.selection(); context = { path: S.file, line: sel.line, selection: sel.text }; }
-  input.value = ''; autosize();
+  if (mode !== 'mac' && S.ctxOn && S.file) { const sel = editor.selection(); context = { path: S.file, line: sel.line, selection: sel.text }; }
+  if (!retry) { input.value = ''; autosize(); pendingAtt.length = 0; renderAtt(); }
   if (S.view !== 'prompt' && !document.body.classList.contains('chat-over')) show('prompt');
-  try { if (S.pendingWrite) await flush(false); await call('prompt', { text, mode, context, attachments }); pendingAtt.length = 0; renderAtt(); S.chatRunning = true; updateSend(); }
-  catch (err) { input.value = text; toast(err.message, 3500); }
+  const p = { text, mode, attachments, el: h('div', { class: 'msg user pending' }, text) };
+  pendingSends.push(p); append(p.el);
+  try {
+    if (S.pendingWrite) await flush(false);
+    if (!S.chat) { const r = await call('chat.new'); setChat(r.chat, text.slice(0, 60)); }
+    const r = await call('prompt', { chat: S.chat, text, mode, context, attachments });
+    if (r.chat !== S.chat) setChat(r.chat, text.slice(0, 60));
+    if (r.started) { S.chatRunning = true; S.running.add(r.chat); updateSend(); }
+  } catch (err) {
+    p.el.className = 'msg user failed';
+    p.el.append(h('span', { class: 'retry' }, `Not delivered${err.message && err.message !== 'Disconnected' && err.message !== 'Not connected' ? ` (${err.message})` : ''}. Tap to send again`));
+    p.el.onclick = () => { pendingSends.splice(pendingSends.indexOf(p), 1); p.el.remove(); send(p); };
+  }
 }
-$('#send').onclick = send;
+$('#send').onclick = () => send();
 $('#prompt-input').onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(); };
 function autosize() { const t = $('#prompt-input'); t.style.height = 'auto'; t.style.height = `${Math.min(t.scrollHeight, window.innerHeight * 0.35)}px`; }
 $('#prompt-input').oninput = autosize;
-$('#new-chat').onclick = () => call('chat.new').catch(e => toast(e.message));
 $('#mode').value = localStorage.getItem('vsp.mode') || 'edits';
-$('#mode').onchange = (e) => localStorage.setItem('vsp.mode', e.target.value);
+$('#mode').onchange = (e) => {
+  localStorage.setItem('vsp.mode', e.target.value);
+  $('#prompt-input').placeholder = e.target.value === 'mac' ? 'Tell your Mac what to do…' : 'Ask Claude to do something in this project…';
+  if ($('.empty-hint')) emptyChat();
+};
+$('#mode').onchange({ target: $('#mode') });
 
 // ---------- changes ----------
 async function loadChanges() {

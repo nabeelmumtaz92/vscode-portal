@@ -28,9 +28,51 @@ Old repo `~/Desktop/Portal` (private; `portal-server.js`, `agent/`, `web/index.h
   (fixed with 16px input and max-scale); a dropped websocket silently loses queued messages; a 15 s heartbeat can kill the socket during
   large uploads.
 
-## Open work on this branch (uncommitted when this was written)
-`extension/screen.js` and `extension/native/portal-helper.swift` have unfinished edits from an earlier chat (the Screen tab).
-Review `git diff` before committing; don't discard them blindly.
+## Open work on this branch
+None uncommitted. The running VS Code windows only pick up new extension code after a reload (or in a new window).
+
+## Gap list: Portal vs VSCode Portal (Oct 18 2026)
+
+✅ = VSCode Portal has it · ⚠️ = partly · ❌ = missing. Sources: the owner's feature list for the Portal iPhone app, the
+old repo, and the VSCode Portal code on branch `screen`.
+
+### Seeing the Mac
+- ✅ Live screen, hardware H.264 (native helper `extension/native/portal-helper.swift`, ScreenCaptureKit + VideoToolbox), up to 60 fps
+- ✅ Pick a monitor, or **all screens side by side** (helper composites the displays as arranged in System Settings)
+- ✅ Pinch zoom, pan while zoomed; ✅ weak connections (ack-based flow control, bitrate steps down/up, skips ahead)
+- ✅ Quality slider 30–100%, frame-rate slider 10–60 fps; ✅ status panel (computer, resolution, fps, bitrate, latency) + live latency chip
+- ✅ App decodes in its WebView with WebCodecs (works in WKWebView, checked in the iOS Simulator); a native decoder isn't needed
+
+### Mouse, keyboard, clipboard
+- ✅ Touch and Trackpad modes, tap/double-tap, right-click (hold or two fingers), hold-and-drag, scroll with momentum
+- ✅ Haptics in the app; ✅ keyboard opens/closes with text boxes on the Mac (setting to turn off); ✅ key bar with sticky ⌘⌥⌃⇧
+- ✅ Clipboard both ways (in the app a Mac copy lands on the phone automatically)
+
+### Prompt mode: Claude doing things on the Mac
+Built Oct 18 (`extension/chats.js`, `extension/agent/`, `extension/native/mac-helper.swift` → `bin/portal-mac`).
+Every chat is a saved Claude Code session; each message's mode is **🖥 Mac** (Portal's tools over MCP) or a project mode.
+- ✅ Mac-control agent with Portal's tools and system prompt: computer (screenshot, zoom, clicks, drag, scroll, type, keys,
+  wait), open/quit/hide apps, open files/folders/links, find files, list windows, window close/minimize/focus/full screen,
+  find/press/fill UI elements by name (accessibility), clipboard, volume/mute, brightness, media, look at any monitor or all
+- ✅ Screenshots in the chat (live "What I see", send_screenshot, 📸 on demand), full-screen viewer with pinch zoom and Share
+- ✅ Terminal approvals (Allow/Deny card; risky commands always ask; setting to auto-approve safe ones); ✅ show-actions glide + ripple
+- ✅ Add to a running task (Send becomes "Add"); ✅ several chats at once (they take turns with the mouse/keyboard)
+- ✅ Saved chats: searchable list, reopen/continue, swipe to delete, running ones marked; ✅ memory notes + search_chats
+- ✅ "End of task" marker; ✅ "Not delivered, tap to send again"
+- ⚠️ Attachments: photos, videos and documents ✅ (Mac mode gets pictures/PDFs in the message); ❌ resume across connection
+  drops; ❌ copies in Downloads › Portal Uploads
+- ❌ Import the old Portal's chats and notes
+
+### Siri and Shortcuts
+- ❌ "Hey Siri, ask Portal" (runs a task, reads back the reply with a picture); ❌ "Show my Mac's screen" shortcut
+
+### Connection and app
+- ✅ From anywhere (relay, E2E encrypted), same Wi-Fi, Tailscale; ✅ pairing key in Keychain/Keystore; ✅ reconnects on return
+- ✅ Keeps the phone awake while connected; ✅ warns when mouse/keyboard permission is missing
+- ❌ Push notifications ("done", "needs your OK")
+- ⚠️ Updates: TestFlight/App Store replace Portal's over-the-air install (by design)
+- ❌ Always on: Portal's server runs as a launch agent; VSCode Portal only runs while VS Code is open
+- ❌ Funnel/launch-agent migration so the old Portal can be turned off
 
 ## Suggested order
 1. Diff Portal vs VSCode Portal feature by feature and write the gap list here.

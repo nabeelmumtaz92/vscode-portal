@@ -9,6 +9,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
+const { createChats } = require('./chats');
+const { createMac } = require('./agent/mac');
+const { createMcpServer } = require('./agent/mcp');
 
 const WEB_DIR = path.join(__dirname, 'web');
 const MIME = {
@@ -17,7 +20,6 @@ const MIME = {
 };
 const HIDDEN = new Set(['.git', 'node_modules', '.DS_Store', '.expo', 'Pods', 'DerivedData', '.next', '.venv', '__pycache__']);
 const MAX_FILE = 2 * 1024 * 1024;
-const MAX_CHAT_EVENTS = 3000;
 const MAX_RUN_OUTPUT = 256 * 1024;
 // In "Auto-edit" mode Claude may edit files and run these without asking; anything else is denied.
 const SAFE_TOOLS = [
@@ -47,11 +49,10 @@ function findBin(name) {
   return null;
 }
 
-function createPortalServer({ host, token, claudeBin, useApiKey = false, screen = null, log = () => {} }) {
+function createPortalServer({ host, token, claudeBin, useApiKey = false, screen = null, macBinary = path.join(__dirname, 'bin', 'portal-mac'), log = () => {} }) {
   const clients = new Set();
   const uploads = new Map();
   const failures = new Map(); // ip -> { count, since }
-  const chat = { events: [], running: false, sessionId: null, proc: null };
   const runs = new Map();
   let nextClient = 1;
   let nextRun = 1;
@@ -60,13 +61,11 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
     const s = JSON.stringify(msg);
     for (const c of clients) if (c.authed && c.ws.readyState === 1) c.ws.send(s);
   };
-  const pushChat = (ev) => {
-    chat.events.push(ev);
-    if (chat.events.length > MAX_CHAT_EVENTS) chat.events.splice(0, chat.events.length - MAX_CHAT_EVENTS);
-    broadcast({ type: 'chat.event', event: ev });
-  };
 
   const roots = () => host.folders().map(f => path.resolve(f.path));
+  const mac = createMac(macBinary);
+  const mcp = createMcpServer();
+  const chats = createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir: UPLOAD_DIR, useApiKey, broadcast, log });
   function inside(p) {
     if (typeof p !== 'string' || !path.isAbsolute(p)) throw new Error('Bad path');
     const abs = path.resolve(p);
@@ -87,7 +86,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
   function hello() {
     return {
       workspace: host.workspaceName(), folders: host.folders(), active: host.activeFile(), tabs: host.openTabs(),
-      chat: { running: chat.running, events: chat.events, hasSession: !!chat.sessionId },
+      chats: { running: chats.running(), settings: chats.settings(), mac: process.platform === 'darwin' },
       claude: !!claudeBin, home: os.homedir(), screen: screen ? screen.status() : null,
     };
   }
@@ -259,91 +258,23 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
       return { id, name: out.name, kind: out.kind, frames: out.frames.length, duration: out.duration || 0 };
     },
 
-    async prompt({ text, mode, context, attachments }) {
-      if (chat.running) throw new Error('Claude is still working. Stop it first.');
-      if (!claudeBin) throw new Error('Claude Code not found. Install the Claude Code extension or set vscodePortal.claudePath.');
-      text = String(text || '').trim();
-      if (!text) throw new Error('Empty prompt');
-      mode = ['edits', 'full', 'plan'].includes(mode) ? mode : 'edits';
-      let full = text;
-      if (context && context.path) {
-        full += `\n\n(Context from VSCode Portal, the user is on their phone: they're looking at ${context.path}`
-          + (context.line ? ` around line ${context.line}` : '')
-          + (context.selection ? `, with this selected:\n\`\`\`\n${String(context.selection).slice(0, 4000)}\n\`\`\`` : '')
-          + '.)';
-      }
+    // ---- chats (see chats.js): several at once, saved and searchable; Mac mode controls the Mac ----
+    async 'chat.list'({ query }) { return chats.list(query); },
+    async 'chat.open'({ chat, limit }) {
+      const c = chats.open(chat, { limit: Math.min(2000, Number(limit) || 120) });
+      if (!c) throw new Error('That chat doesn\'t exist anymore.');
+      return c;
+    },
+    async 'chat.new'() { return { chat: chats.create() }; },
+    async 'chat.delete'({ chat }) { return chats.remove(chat); },
+    async prompt({ chat, text, mode, context, attachments }) {
       const atts = (Array.isArray(attachments) ? attachments : []).map(id => uploads.get(id) && uploads.get(id).info).filter(Boolean);
-      if (atts.length) {
-        full += '\n\n(Attachments from VSCode Portal. Use the Read tool to view these image files:';
-        for (const a of atts) {
-          if (a.kind === 'video') {
-            full += `\n- Video "${a.name}" (${a.duration ? a.duration.toFixed(1) + 's' : 'unknown length'}), ${a.frames.length} frames sampled evenly in time order, read all of them to follow what happens: `
-              + a.frames.map(f => `${f.path} (t=${f.t}s)`).join(', ') + `. Original file: ${a.path}. ${a.note}`;
-          } else full += `\n- ${a.kind} "${a.name}": ${a.path}`;
-        }
-        full += ')';
-      }
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
-      if (atts.length) args.push('--add-dir', UPLOAD_DIR);
-      if (mode === 'full') args.push('--permission-mode', 'bypassPermissions');
-      else if (mode === 'plan') args.push('--permission-mode', 'plan');
-      else args.push('--permission-mode', 'acceptEdits', '--allowedTools', SAFE_TOOLS.join(','));
-      if (chat.sessionId) args.push('--resume', chat.sessionId);
-
-      // Use the Claude subscription login (Pro/Max) unless the user opts into API-key billing.
-      const claudeEnv = { ...process.env };
-      if (!useApiKey) { delete claudeEnv.ANTHROPIC_API_KEY; delete claudeEnv.ANTHROPIC_AUTH_TOKEN; }
-      const proc = spawn(claudeBin, args, { cwd: roots()[0] || os.homedir(), env: claudeEnv, stdio: ['pipe', 'pipe', 'pipe'] });
-      proc.stdin.end(full);
-      chat.running = true;
-      chat.proc = proc;
-      pushChat({ type: 'portal.user', text, mode, context: context && context.path || null, attachments: atts.map(a => ({ name: a.name, kind: a.kind, frames: a.frames.length })), at: Date.now() });
-      broadcast({ type: 'chat.status', running: true });
-
-      let buf = '';
-      let errText = '';
-      proc.stdout.on('data', d => {
-        buf += d;
-        let i;
-        while ((i = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, i).trim();
-          buf = buf.slice(i + 1);
-          if (!line) continue;
-          let ev;
-          try { ev = JSON.parse(line); } catch { continue; }
-          if (ev.session_id && (ev.type === 'system' || ev.type === 'result')) chat.sessionId = ev.session_id;
-          if (ev.type === 'stream_event') broadcast({ type: 'chat.event', event: ev });
-          else pushChat(ev);
-        }
-      });
-      proc.stderr.on('data', d => { errText = (errText + d).slice(-4000); });
-      proc.on('error', e => pushChat({ type: 'portal.error', text: e.message }));
-      proc.on('close', (code, signal) => {
-        if (chat.stopping) pushChat({ type: 'portal.stopped' });
-        else if (code) pushChat({ type: 'portal.error', text: errText.trim() || `Claude exited with code ${code}` });
-        chat.running = false;
-        chat.proc = null;
-        chat.stopping = false;
-        broadcast({ type: 'chat.status', running: false });
-        log(`prompt finished (${signal || code})`);
-      });
-      return { started: true };
+      return chats.send({ chat, text, mode, context, attachments: atts });
     },
-    async 'prompt.stop'() {
-      const p = chat.proc;
-      if (!p) return false;
-      chat.stopping = true;
-      p.kill('SIGINT');
-      setTimeout(() => { if (chat.proc === p) p.kill('SIGKILL'); }, 3000).unref?.();
-      return true;
-    },
-    async 'chat.new'() {
-      if (chat.running) throw new Error('Stop Claude first');
-      chat.events = [];
-      chat.sessionId = null;
-      broadcast({ type: 'chat.reset' });
-      return true;
-    },
+    async 'prompt.stop'({ chat }) { return chats.stop(chat); },
+    async 'agent.answer'({ rid, allowed }) { return chats.answer(String(rid || ''), allowed === true); },
+    async 'agent.settings'(changes) { return changes && Object.keys(changes).some(k => k !== 'id' && k !== 'type') ? chats.setSettings(changes) : chats.settings(); },
+    async 'chat.screenshot'({ chat }) { return chats.screenshot(chat); },
 
     // Screen: video goes out as binary messages; the phone acks each frame (see screen.js)
     async 'screen.start'(_, client) { if (!screen) throw new Error('Screen sharing needs a Mac.'); return screen.join(client); },
@@ -473,7 +404,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
     return p;
   }
   function close() {
-    if (chat.proc) chat.proc.kill('SIGKILL');
+    chats.close(); mcp.close(); mac.close();
     for (const r of runs.values()) if (r.proc) { try { process.kill(-r.proc.pid, 'SIGKILL'); } catch {} }
     for (const c of clients) { try { c.ws.terminate ? c.ws.terminate() : c.ws.close(1001, 'closing'); } catch {} }
     wss.close();
@@ -481,7 +412,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
     return new Promise(r => server.close(() => r()));
   }
 
-  return { listen, listenAlso, attach, close, server, _chat: chat };
+  return { listen, listenAlso, attach, close, server, chats };
 }
 
 function findClaude(extensionsDir) {
