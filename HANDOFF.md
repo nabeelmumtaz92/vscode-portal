@@ -71,7 +71,10 @@ Every chat is a saved Claude Code session; each message's mode is **🖥 Mac** (
 - ✅ Keeps the phone awake while connected; ✅ warns when mouse/keyboard permission is missing
 - ❌ Push notifications ("done", "needs your OK")
 - ⚠️ Updates: TestFlight/App Store replace Portal's over-the-air install (by design)
-- ❌ Always on: Portal's server runs as a launch agent; VSCode Portal only runs while VS Code is open
+- ✅ Always on (built, not yet switched on): "VSCode Portal: Keep Running When VS Code Is Closed" installs
+  `com.vscodeportal.host` (standalone.js on VS Code's bundled Node, files copied to ~/Library/Application Support/VSCode
+  Portal/host, log in ~/Library/Logs/VSCode Portal). Shows on the phone as "<Mac> (always on)": Files over the home
+  folder, Terminal, Screen, Mac-mode Claude. macOS asks once for Screen Recording + Accessibility for "Code Helper (Plugin)".
 - ❌ Funnel/launch-agent migration so the old Portal can be turned off
 
 ## Suggested order

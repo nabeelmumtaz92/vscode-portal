@@ -8,6 +8,7 @@ const fs = require('fs');
 const { createPortalServer, findClaude } = require('./server');
 const { connectRelay } = require('./relay-host');
 const { createScreen } = require('./screen');
+const alwaysOn = require('./always-on');
 const E2E = require('./web/e2e.js');
 
 let portal = null;
@@ -276,6 +277,26 @@ async function activate(context) {
       vscode.window.showInformationMessage('Screen sharing is on. If macOS asked for permissions, allow them, then quit and reopen VS Code.');
     }),
     vscode.commands.registerCommand('vscodePortal.connectInfo', () => showConnectPanel()),
+    vscode.commands.registerCommand('vscodePortal.alwaysOn', async () => {
+      if (process.platform !== 'darwin') return vscode.window.showWarningMessage('Always on needs a Mac.');
+      if (alwaysOn.installed()) {
+        const off = await vscode.window.showInformationMessage('VSCode Portal keeps running when VS Code is closed.', 'Turn Off', 'Restart It', 'Show Log');
+        if (off === 'Turn Off') { await alwaysOn.uninstall(); vscode.window.showInformationMessage('Turned off. The phone reaches the Mac only while VS Code is open.'); }
+        if (off === 'Restart It') await alwaysOn.restart();
+        if (off === 'Show Log') vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(alwaysOn.LOG_DIR, 'host.log')));
+        return;
+      }
+      const cfg = vscode.workspace.getConfiguration('vscodePortal');
+      const ok = await vscode.window.showInformationMessage(
+        'Keep VSCode Portal running when VS Code is closed?',
+        { modal: true, detail: 'A small login item keeps the phone connected to this Mac all the time (Screen, Files, Terminal and Claude on the Mac). It shows in the phone\'s window list as this Mac "(always on)". macOS will ask once to allow Screen Recording and Accessibility for "Code Helper (Plugin)".' },
+        'Keep Running');
+      if (ok !== 'Keep Running') return;
+      try {
+        await alwaysOn.install({ extensionPath: context.extensionPath, relayUrl: (cfg.get('relayUrl') || '').trim(), claudePath: cfg.get('claudePath') || '' });
+        vscode.window.showInformationMessage('VSCode Portal now keeps running when VS Code is closed.');
+      } catch (e) { vscode.window.showErrorMessage(`Couldn't set it up: ${e.message}`); }
+    }),
     vscode.commands.registerCommand('vscodePortal.importPortal', () => {
       if (!portal) return vscode.window.showWarningMessage('VSCode Portal is not running.');
       const r = portal.chats.importPortal();
@@ -286,6 +307,7 @@ async function activate(context) {
       if (ok !== 'Unpair') return;
       getPairing(true);
       await vscode.commands.executeCommand('vscodePortal.restart');
+      if (alwaysOn.installed()) await alwaysOn.restart(); // the always-on host picks up the new pairing
       vscode.window.showInformationMessage('All phones unpaired. Reload your other VS Code windows too.');
     }),
     vscode.commands.registerCommand('vscodePortal.restart', async () => {
@@ -297,6 +319,8 @@ async function activate(context) {
     { dispose: () => { if (relay) relay.close(); if (portal) portal.close(); if (screen) screen.close(); } },
   );
   await start(context, host);
+  // An installed always-on host gets this version's files
+  alwaysOn.refresh({ extensionPath: context.extensionPath }).catch((e) => console.log(`[VSCode Portal] always-on update failed: ${e.message}`));
 }
 
 function deactivate() { if (relay) relay.close(); if (screen) screen.close(); return portal && portal.close(); }

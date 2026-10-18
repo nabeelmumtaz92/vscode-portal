@@ -66,6 +66,10 @@
       {
         "command": "vscodePortal.importPortal",
         "title": "VSCode Portal: Import Chats from Portal"
+      },
+      {
+        "command": "vscodePortal.alwaysOn",
+        "title": "VSCode Portal: Keep Running When VS Code Is Closed"
       }
     ],
     "configuration": {
