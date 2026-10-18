@@ -131,8 +131,10 @@ async function pickHost() {
   const named = window.PORTAL_APP && window.PORTAL_APP.host && hosts.find(h => h.name === window.PORTAL_APP.host);
   if (named) { localStorage.setItem('vsp.host', named.id); return named.id; }
   const saved = localStorage.getItem('vsp.host');
-  if (hosts.some(h => h.id === saved)) return saved;
-  if (hosts.length === 1) return hosts[0].id;
+  // The app remembers the window too, for Siri and Shortcuts
+  const tell = (id) => { const h = hosts.find(x => x.id === id); if (h) toApp({ type: 'host', id: h.id, name: h.name, computer: h.computer }); return id; };
+  if (hosts.some(h => h.id === saved)) return tell(saved);
+  if (hosts.length === 1) return tell(hosts[0].id);
   return new Promise(resolve => showWindows(hosts, null, (id) => { localStorage.setItem('vsp.host', id); resolve(id); }, false));
 }
 // The window list: shown at the start when there's more than one, and from the header any time
@@ -153,6 +155,7 @@ function showWindows(hosts, current, choose, closable = true) {
 }
 function switchHost(id) {
   localStorage.setItem('vsp.host', id);
+  toApp({ type: 'host', id });
   S.switching = true;
   if (S.view === 'screen') Screen.hide();
   if (ws) ws.close();

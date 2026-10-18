@@ -275,7 +275,7 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
     proc.stdin.on('error', () => {});
     proc.stdin.write(userLine(content) + '\n');
 
-    let buf = '', errText = '', failed = null, sawResult = false;
+    let buf = '', errText = '', failed = null, sawResult = false, limitNote = null;
     proc.stdout.on('data', (d) => {
       buf += d;
       let i;
@@ -286,13 +286,14 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
         if (ev.type === 'stream_event') { record(chat, ev, { save: false }); continue; }
         if (ev.type === 'rate_limit_event' && ev.rate_limit_info && ev.rate_limit_info.status === 'rejected') {
           const r = ev.rate_limit_info.resetsAt;
-          failed = `Claude plan usage limit reached${r ? ` (resets ${new Date(r * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}.`;
+          // Only an explanation if the task fails: a request can still go through after this notice
+          limitNote = `Claude plan usage limit reached${r ? ` (resets ${new Date(r * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}.`;
           continue;
         }
         if (ev.type === 'system' && ev.subtype !== 'init') continue;
         if (ev.type === 'result') {
           sawResult = true;
-          if (ev.is_error && !failed) failed = String(ev.result || (ev.errors || []).join('; ') || ev.subtype);
+          if (ev.is_error && !failed) failed = limitNote || String(ev.result || (ev.errors || []).join('; ') || ev.subtype);
           // Added to while it finished: keep going with that; otherwise close stdin so it exits
           if (run.addenda.length) { flushAddenda(run); record(chat, ev); continue; }
           run.stdinOpen = false;
@@ -318,7 +319,7 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
       }
       if (run.stopping) record(chat, { type: 'portal.stopped', at: Date.now() });
       else if (failed) record(chat, { type: 'portal.error', text: failed });
-      else if (code && !sawResult) record(chat, { type: 'portal.error', text: errText.trim().split('\n').slice(-3).join('\n') || `Claude Code exited with code ${code}` });
+      else if (code && !sawResult) record(chat, { type: 'portal.error', text: limitNote || errText.trim().split('\n').slice(-3).join('\n') || `Claude Code exited with code ${code}` });
       broadcast(status(chat.id));
       log(`chat ${chat.id} finished (${code})`);
     });

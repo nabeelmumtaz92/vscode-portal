@@ -43,6 +43,13 @@
 			<array><string>codeportal</string></array>
 		</dict>
 	</array>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Portal</string>
+		</dict>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>The camera scans the QR code VS Code shows, to pair this phone with your computer.</string>
 	<key>RCTNewArchEnabled</key>

@@ -166,7 +166,7 @@ function Portal({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void 
   }, []);
 
   const onMessage = useCallback((e: WebViewMessageEvent) => {
-    let m: { type?: string; url?: string; id?: number; text?: string; style?: string; on?: boolean; image?: string; title?: string };
+    let m: { type?: string; url?: string; id?: any; text?: string; style?: string; on?: boolean; image?: string; title?: string };
     try { m = JSON.parse(e.nativeEvent.data); } catch { return; }
     if (m.type === 'haptic') {
       haptic(m.style === 'medium' ? 'impactMedium' : m.style === 'heavy' ? 'impactHeavy' : 'impactLight', { enableVibrateFallback: false });
@@ -180,6 +180,8 @@ function Portal({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void 
       if (m.on) activateKeepAwake(); else deactivateKeepAwake();
     } else if (m.type === 'share') {
       Share.share(m.image ? { url: m.image, title: m.title } : { message: m.text || '', title: m.title }).catch(() => {});
+    } else if (m.type === 'host' && typeof m.id === 'string' && Platform.OS === 'ios') {
+      Settings.set({ portalHost: m.id }); // Siri and Shortcuts use the same window (PortalIntents.swift)
     } else if (m.type === 'unpair') {
       Alert.alert('Unpair this phone?', 'You\'ll need to scan the QR code in VS Code again.', [
         { text: 'Cancel', style: 'cancel' }, { text: 'Unpair', style: 'destructive', onPress: onUnpair },

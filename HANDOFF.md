@@ -64,12 +64,17 @@ Every chat is a saved Claude Code session; each message's mode is **🖥 Mac** (
 - ✅ Old Portal's chats and notes imported (automatically once; command "VSCode Portal: Import Chats from Portal")
 
 ### Siri and Shortcuts
-- ❌ "Hey Siri, ask Portal" (runs a task, reads back the reply with a picture); ❌ "Show my Mac's screen" shortcut
+- ✅ "Hey Siri, ask Portal" / "Ask CodePortal": asks "What should your Mac do?", runs it as a Mac-mode chat, reads back the
+  reply with a picture (`mobile/ios/CodePortal/PortalIntents.swift`: App Intents + a Swift relay/E2E client mirroring
+  `web/e2e.js`; prefers the "(always on)" host, else the window last used). Also a Shortcuts action returning the text.
+- ✅ "Show my Mac's screen in Portal": returns a current screenshot (file + snippet), usable in Shortcuts
+- Checked in the iOS Simulator with launch arguments `-testAsk` / `-testScreen` (see IntentSelfTest); not yet on a phone
 
 ### Connection and app
 - ✅ From anywhere (relay, E2E encrypted), same Wi-Fi, Tailscale; ✅ pairing key in Keychain/Keystore; ✅ reconnects on return
 - ✅ Keeps the phone awake while connected; ✅ warns when mouse/keyboard permission is missing
-- ❌ Push notifications ("done", "needs your OK")
+- ❌ Push notifications ("done", "needs your OK"): needs an APNs key (Apple Developer → Keys → Apple Push Notifications
+  service) for the app; the always-on host or relay would send them
 - ⚠️ Updates: TestFlight/App Store replace Portal's over-the-air install (by design)
 - ✅ Always on (built, not yet switched on): "VSCode Portal: Keep Running When VS Code Is Closed" installs
   `com.vscodeportal.host` (standalone.js on VS Code's bundled Node, files copied to ~/Library/Application Support/VSCode

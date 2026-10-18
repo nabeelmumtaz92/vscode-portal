@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
 const { createChats } = require('./chats');
-const { createMac } = require('./agent/mac');
+const { createMac, screenshot } = require('./agent/mac');
 const { createMcpServer } = require('./agent/mcp');
 
 const WEB_DIR = path.join(__dirname, 'web');
@@ -289,6 +289,12 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
     async 'agent.answer'({ rid, allowed }) { return chats.answer(String(rid || ''), allowed === true); },
     async 'agent.settings'(changes) { return changes && Object.keys(changes).some(k => k !== 'id' && k !== 'type') ? chats.setSettings(changes) : chats.settings(); },
     async 'chat.screenshot'({ chat }) { return chats.screenshot(chat); },
+    // A picture of the main display (Siri / Shortcuts: "Show my Mac's screen")
+    async 'screen.snapshot'() {
+      const list = await mac.call('displays');
+      const d = list.find(x => x.main) || list[0];
+      return screenshot({ x: d.x, y: d.y, w: d.w, h: d.h }, 1600);
+    },
 
     // Screen: video goes out as binary messages; the phone acks each frame (see screen.js)
     async 'screen.start'(_, client) { if (!screen) throw new Error('Screen sharing needs a Mac.'); return screen.join(client); },
