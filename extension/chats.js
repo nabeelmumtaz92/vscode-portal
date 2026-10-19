@@ -188,6 +188,26 @@ function createStore() {
 
 // ---------- running chats ----------
 
+// Free-AI fallback: when the Claude plan hits its limit, Claude Code is pointed at a small local proxy
+// (free-ai-proxy.js) that answers from free providers (Gemini, Groq, OpenRouter, ...), rotating as free quotas run
+// out. It stays on the free models for 30 minutes, then tries the Claude plan again.
+const FREE_PORT = 8787;
+const FREE_FOR_MS = 30 * 60 * 1000;
+const LIMIT_RE = /usage limit|limit reached|rate.?limit|overloaded|credit balance|quota|\b429\b|\b529\b|out of extra usage|too many requests/i;
+let freeUntil = 0;
+const freeMode = () => Date.now() < freeUntil;
+async function ensureFreeProxy() {
+  const up = async () => { try { return (await fetch(`http://127.0.0.1:${FREE_PORT}/health`, { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } };
+  if (await up()) return true;
+  try {
+    const child = spawn(process.env.PORTAL_NODE || 'node', [path.join(__dirname, 'free-ai-proxy.js')], { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+  } catch { return false; }
+  for (let i = 0; i < 20; i++) { await new Promise((r) => setTimeout(r, 250)); if (await up()) return true; }
+  return false;
+}
+
 function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiKey = false, broadcast, log = () => {} }) {
   const store = createStore();
   const runs = new Map();      // chat id -> run
@@ -211,6 +231,11 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
     }
     e.MCP_TOOL_TIMEOUT = String(3600 * 1000); // approvals and long commands can take a while
     e.ENABLE_TOOL_SEARCH = 'false';
+    if (freeMode()) {
+      e.ANTHROPIC_BASE_URL = `http://127.0.0.1:${FREE_PORT}`;
+      e.ANTHROPIC_AUTH_TOKEN = 'free';
+      e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+    }
     return e;
   }
 
@@ -315,6 +340,15 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
         const earlier = store.texts(chat).slice(-30).map((m) => `${m.who}: ${m.text}`).join('\n').slice(-12000);
         const text = content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
         start(chat, mode, [{ type: 'text', text: `(This chat continues an earlier conversation; here's what was said:\n${earlier}\n)\n\n${text}` }], true);
+        return;
+      }
+      if (!run.stopping && !freeMode() && LIMIT_RE.test((failed || '') + (limitNote || '') + errText)) {
+        ensureFreeProxy().then((ok) => {
+          if (!ok) { record(chat, { type: 'portal.error', text: failed || limitNote || 'Claude plan limit reached.' }); broadcast(status(chat.id)); return; }
+          freeUntil = Date.now() + FREE_FOR_MS;
+          record(chat, { type: 'portal.notice', text: "Claude's limit was reached, so I'm continuing on free AI models (rotating between Gemini, Groq and OpenRouter). Claude comes back automatically later." });
+          start(chat, mode, content, true, addDir);
+        });
         return;
       }
       if (run.stopping) record(chat, { type: 'portal.stopped', at: Date.now() });
