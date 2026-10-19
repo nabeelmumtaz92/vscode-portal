@@ -173,7 +173,7 @@ async function start(context, host) {
   if (!cfg.get('enabled')) return;
   const token = await getToken();
   const claudeBin = cfg.get('claudePath') || findClaude(path.join(os.homedir(), '.vscode', 'extensions'));
-  portal = createPortalServer({ host, token, claudeBin, useApiKey: !!cfg.get('useApiKey'), screen, log: (m) => console.log(`[VSCode Portal] ${m}`) });
+  portal = createPortalServer({ host, token, claudeBin, useApiKey: !!cfg.get('useApiKey'), aiMode: cfg.get('aiMode') || 'free', screen, log: (m) => console.log(`[VSCode Portal] ${m}`) });
   try {
     port = await portal.listen(cfg.get('port'), cfg.get('host'));
     wifiUrl = null;

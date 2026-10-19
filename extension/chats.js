@@ -194,8 +194,10 @@ function createStore() {
 const FREE_PORT = 8787;
 const FREE_FOR_MS = 30 * 60 * 1000;
 const LIMIT_RE = /usage limit|limit reached|rate.?limit|overloaded|credit balance|quota|\b429\b|\b529\b|out of extra usage|too many requests/i;
-let freeUntil = 0;
-const freeMode = () => Date.now() < freeUntil;
+let freeUntil = 0;      // claude-first mode: on free models until this time after a Claude limit
+let claudeUntil = 0;    // free-then-claude mode: on the Claude plan until this time after every free slot failed
+let AI_MODE = 'free';   // 'free' (default: free models only, never spends), 'free-then-claude', 'claude-first'
+const freeMode = () => (AI_MODE === 'claude-first' ? Date.now() < freeUntil : Date.now() >= claudeUntil);
 async function ensureFreeProxy() {
   const up = async () => { try { return (await fetch(`http://127.0.0.1:${FREE_PORT}/health`, { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } };
   if (await up()) return true;
@@ -208,7 +210,8 @@ async function ensureFreeProxy() {
   return false;
 }
 
-function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiKey = false, broadcast, log = () => {} }) {
+function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiKey = false, aiMode = 'free', broadcast, log = () => {} }) {
+  AI_MODE = ['free', 'free-then-claude', 'claude-first'].includes(aiMode) ? aiMode : 'free';
   const store = createStore();
   const runs = new Map();      // chat id -> run
   const approvals = new Map(); // request id -> { resolve, chat }
@@ -232,6 +235,7 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
     e.MCP_TOOL_TIMEOUT = String(3600 * 1000); // approvals and long commands can take a while
     e.ENABLE_TOOL_SEARCH = 'false';
     if (freeMode()) {
+      delete e.ANTHROPIC_API_KEY; // never the paid API key while on the free models
       e.ANTHROPIC_BASE_URL = `http://127.0.0.1:${FREE_PORT}`;
       e.ANTHROPIC_AUTH_TOKEN = 'free';
       e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
@@ -290,6 +294,7 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
       mcpUrl = run.mcp.url;
     }
 
+    if (freeMode()) await ensureFreeProxy();
     const cwd = mode === 'mac' && !fs.existsSync(chat.cwd) ? WORK_DIR : chat.cwd;
     await fsp.mkdir(WORK_DIR, { recursive: true });
     const a = args(chat, mode, mcpUrl);
@@ -342,13 +347,26 @@ function createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir, useApiK
         start(chat, mode, [{ type: 'text', text: `(This chat continues an earlier conversation; here's what was said:\n${earlier}\n)\n\n${text}` }], true);
         return;
       }
-      if (!run.stopping && !freeMode() && LIMIT_RE.test((failed || '') + (limitNote || '') + errText)) {
+      const limited = !run.stopping && LIMIT_RE.test((failed || '') + (limitNote || '') + errText);
+      if (limited && AI_MODE === 'claude-first' && !freeMode()) {
         ensureFreeProxy().then((ok) => {
           if (!ok) { record(chat, { type: 'portal.error', text: failed || limitNote || 'Claude plan limit reached.' }); broadcast(status(chat.id)); return; }
           freeUntil = Date.now() + FREE_FOR_MS;
-          record(chat, { type: 'portal.notice', text: "Claude's limit was reached, so I'm continuing on free AI models (rotating between Gemini, Groq and OpenRouter). Claude comes back automatically later." });
+          record(chat, { type: 'portal.notice', text: "Claude's limit was reached, so I'm continuing on free AI models (rotating between Gemini, Groq, OpenRouter and the Mac's own model). Claude comes back automatically later." });
           start(chat, mode, content, true, addDir);
         });
+        return;
+      }
+      if (limited && AI_MODE === 'free-then-claude' && freeMode()) {
+        // Every free slot (and the Mac's own model) failed: use the Claude plan for a while
+        claudeUntil = Date.now() + FREE_FOR_MS;
+        record(chat, { type: 'portal.notice', text: 'The free AI models are all busy or used up right now, so I\'m using your Claude plan for a while.' });
+        start(chat, mode, content, true, addDir);
+        return;
+      }
+      if (limited && AI_MODE === 'free' && freeMode()) {
+        record(chat, { type: 'portal.error', text: 'All the free AI models are busy or used up right now (this mode never spends money). Try again in a few minutes, or switch vscodePortal.aiMode to free-then-claude.' });
+        broadcast(status(chat.id));
         return;
       }
       if (run.stopping) record(chat, { type: 'portal.stopped', at: Date.now() });

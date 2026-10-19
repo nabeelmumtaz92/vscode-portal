@@ -35,6 +35,12 @@ function loadKeys() {
   return keys;
 }
 
+// The Mac's own model (Ollama) is the unlimited floor: used after every free cloud slot that's ready, so it can't run out.
+function localSlot(keys) {
+  if (keys.LOCAL_AI_DISABLED === 'true') return null;
+  return { id: `local:${keys.LOCAL_MODEL || 'qwen3:8b'}`, key: 'ollama', url: keys.LOCAL_AI_CHAT_URL || 'http://127.0.0.1:11434/v1/chat/completions', model: keys.LOCAL_MODEL || 'qwen3:8b', floor: true };
+}
+
 function slots() {
   const keys = loadKeys();
   const out = [];
@@ -43,6 +49,8 @@ function slots() {
     const override = keys[`AI_MODEL_${p.name.toUpperCase()}`];
     for (const model of override ? override.split(',').map((s) => s.trim()) : p.models) out.push({ id: `${p.name}:${model}`, key: keys[p.env], url: p.url, model });
   }
+  const local = localSlot(keys);
+  if (local) out.push(local);
   return out;
 }
 
@@ -95,11 +103,14 @@ function toChat(req) {
 async function callUpstream(req) {
   const all = slots();
   if (!all.length) throw Object.assign(new Error('No free AI keys configured in ~/.config/free-ai/keys.env'), { status: 503 });
-  const start = rotation++ % all.length;
-  const rotated = all.map((_, i) => all[(start + i) % all.length]);
+  const cloud = all.filter((s) => !s.floor);
+  const floor = all.filter((s) => s.floor);
+  const start = cloud.length ? rotation++ % cloud.length : 0;
+  const rotated = cloud.map((_, i) => cloud[(start + i) % cloud.length]);
   const now = Date.now();
   const ready = rotated.filter((s) => (resting.get(s.id)?.until || 0) <= now);
   const waiting = rotated.filter((s) => (resting.get(s.id)?.until || 0) > now).sort((a, b) => resting.get(a.id).until - resting.get(b.id).until);
+  ready.push(...floor);
   const body = toChat(req);
   let lastErr;
   for (const slot of [...ready, ...waiting]) {

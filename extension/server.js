@@ -49,7 +49,7 @@ function findBin(name) {
   return null;
 }
 
-function createPortalServer({ host, token, claudeBin, useApiKey = false, screen = null, macBinary = path.join(__dirname, 'bin', 'portal-mac'), log = () => {} }) {
+function createPortalServer({ host, token, claudeBin, useApiKey = false, aiMode = 'free', screen = null, macBinary = path.join(__dirname, 'bin', 'portal-mac'), log = () => {} }) {
   const clients = new Set();
   const uploads = new Map();
   const failures = new Map(); // ip -> { count, since }
@@ -65,7 +65,7 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, screen 
   const roots = () => host.folders().map(f => path.resolve(f.path));
   const mac = createMac(macBinary);
   const mcp = createMcpServer();
-  const chats = createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir: UPLOAD_DIR, useApiKey, broadcast, log });
+  const chats = createChats({ claudeBin, macBinary, mac, mcp, roots, uploadDir: UPLOAD_DIR, useApiKey, aiMode, broadcast, log });
   function inside(p) {
     if (typeof p !== 'string' || !path.isAbsolute(p)) throw new Error('Bad path');
     const abs = path.resolve(p);

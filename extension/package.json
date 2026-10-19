@@ -115,6 +115,12 @@
           "default": "",
           "description": "Access code. Leave empty to use a generated one."
         },
+        "vscodePortal.aiMode": {
+          "type": "string",
+          "enum": ["free", "free-then-claude", "claude-first"],
+          "default": "free",
+          "description": "Which AI answers prompts. free: free models only (Gemini, Groq, OpenRouter, then the Mac's own model); never spends money. free-then-claude: free first, your Claude plan only if every free model fails. claude-first: your Claude plan, switching to free models when its limit is hit."
+        },
         "vscodePortal.useApiKey": {
           "type": "boolean",
           "default": false,
