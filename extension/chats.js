@@ -23,7 +23,7 @@ const SETTINGS_FILE = path.join(DIR, 'agent-settings.json');
 const WORK_DIR = path.join(DIR, 'agent-work'); // where Mac chats run (Claude Code keeps sessions per folder)
 const MAX_EVENTS = 1500;
 const MAX_SAVED_IMAGES = 12;     // older screenshots in a chat are dropped from the saved copy
-const MAX_NOTES_CHARS = 6000;
+const MAX_NOTES_CHARS = 16000;
 const MAC_MODEL = 'claude-sonnet-5-5';
 const STOP_GRACE_MS = 3000;
 // Commands Claude may run without asking in Auto-edit mode
@@ -144,7 +144,14 @@ function createStore() {
     return out;
   }
 
-  const notes = () => { try { return fs.readFileSync(NOTES, 'utf8').slice(0, MAX_NOTES_CHARS); } catch { return ''; } };
+  const notes = () => {
+    // Own notes + the Portal agent's shared memory (~/.config/portal/memory.md), so every AI here knows the same IDs, repos and preferences.
+    let own = ''; try { own = fs.readFileSync(NOTES, 'utf8'); } catch {}
+    let shared = ''; try { shared = fs.readFileSync(path.join(os.homedir(), '.config', 'portal', 'memory.md'), 'utf8'); } catch {}
+    const have = new Set(shared.split('\n').map((l) => l.trim()));
+    const extra = own.split('\n').filter((l) => l.trim() && !have.has(l.trim())).join('\n');
+    return (shared.trim() + (extra ? '\n' + extra : '')).slice(0, MAX_NOTES_CHARS);
+  };
   function remember(fact) {
     const line = String(fact).replace(/\s+/g, ' ').trim().slice(0, 300);
     if (line) fs.appendFileSync(NOTES, `- ${line}\n`, { mode: 0o600 });
