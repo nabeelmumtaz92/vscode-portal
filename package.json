@@ -1,0 +1,17 @@
+{
+  "name": "vscode-portal-luxe",
+  "version": "1.0.0",
+  "description": "VS Code Portal & Zion Luxe Native Mac Desktop Application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . VSCodePortal --platform=darwin --arch=x64 --out=dist --icon=extension/web/icon.svg --overwrite"
+  },
+  "dependencies": {
+    "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-packager": "^17.1.2"
+  }
+}
