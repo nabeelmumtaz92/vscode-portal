@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
   <title>Zion Luxe — Unified Intent & HNW Database Engine</title>
+=======
+  <title>Zion Luxe — Private Intent & Booking Engine</title>
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
   <link rel="stylesheet" href="style.css">
   <style>
     :root {
@@ -155,7 +159,10 @@
     }
     .lead-meta {
       display: flex;
+<<<<<<< HEAD
       flex-wrap: wrap;
+=======
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
       gap: 12px;
       font-size: 11px;
       color: var(--text-muted);
@@ -167,6 +174,7 @@
       border-radius: 4px;
       font-weight: 500;
     }
+<<<<<<< HEAD
     .badge-db {
       background: rgba(74, 222, 128, 0.15);
       color: #4ade80;
@@ -174,6 +182,8 @@
       border-radius: 4px;
       font-weight: 500;
     }
+=======
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
     .btn {
       background: var(--gold);
       color: #000;
@@ -233,19 +243,34 @@
       <span>✨</span> ZION LUXE
     </div>
     <ul class="nav-links">
+<<<<<<< HEAD
       <li class="active" onclick="switchTab('all')">🎯 Unified Leads Feed</li>
       <li onclick="switchTab('intent')">📡 Part 1: Live Intent Hand-Raisers</li>
       <li onclick="switchTab('database')">🗄️ Part 2: Enriched HNW / B2B DB</li>
       <li onclick="switchTab('studio')">✈️ Private Booking Studio</li>
+=======
+      <li class="active" onclick="switchTab('leads')">🎯 Live Intent Feed</li>
+      <li onclick="switchTab('bookings')">✈️ Private Itineraries</li>
+      <li onclick="switchTab('sources')">📡 Radar Scrapers</li>
+      <li onclick="switchTab('settings')">⚙️ AI & Filters</li>
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
     </ul>
   </div>
 
   <div class="main-content">
     <header>
+<<<<<<< HEAD
       <div class="header-title" id="pageTitle">Unified Luxury Lead & Contact Engine</div>
       <div class="stats-bar">
         <div>Engine Status: <span style="color: #4ade80;">ACTIVE (Part 1 + Part 2)</span></div>
         <div>Total Loaded: <span id="leadCount">0</span></div>
+=======
+      <div class="header-title" id="pageTitle">Real-Time Intent Lead Engine</div>
+      <div class="stats-bar">
+        <div>Active Scans: <span>14 Sources</span></div>
+        <div>Leads Captured Today: <span id="leadCount">5</span></div>
+        <div>System Status: <span style="color: #4ade80;">LIVE & LISTENING</span></div>
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
       </div>
     </header>
 
@@ -253,6 +278,7 @@
       <!-- LEADS PANE -->
       <div class="pane" id="leftPane">
         <h2>
+<<<<<<< HEAD
           <span id="paneHeaderTitle">Live Intent & Database Records</span>
         </h2>
         <div id="leadsList">
@@ -299,6 +325,53 @@
               <button class="btn" onclick="lockBooking()">🔒 Lock Private Booking</button>
               <button class="btn btn-outline" onclick="copyOutreach()">📋 Copy Outreach Pitch</button>
               <a id="visitLinkBtn" href="#" target="_blank" class="btn btn-outline" style="text-decoration: none; text-align: center; display: inline-block; line-height: 20px;">🔗 Open Source Link</a>
+=======
+          <span>Incoming High-Intent Travelers</span>
+          <button class="btn btn-outline" style="padding: 4px 10px; font-size: 12px;" onclick="simulateNewLead()">+ Sim Live Lead</button>
+        </h2>
+        <div id="leadsList">
+          <!-- Dynamically populated leads -->
+        </div>
+      </div>
+
+      <!-- BOOKING & ITINERARY BUILDER PANE -->
+      <div class="pane-right" id="rightPane">
+        <h2>Private Booking Studio</h2>
+        <div id="bookingStudio">
+          <p style="color: var(--text-muted); font-size: 13px;">Select a traveler lead on the left to instantly load their intent data, draft a bespoke luxury itinerary, and lock in the booking.</p>
+
+          <div class="itinerary-preview" id="studioForm" style="display:none;">
+            <div class="form-group">
+              <label>Client Name / Handle</label>
+              <input type="text" id="clientName" value="">
+            </div>
+            <div style="display: flex; gap: 12px;">
+              <div class="form-group" style="flex:1;">
+                <label>Destination</label>
+                <input type="text" id="clientDestination" value="">
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label>Estimated Budget</label>
+                <input type="text" id="clientBudget" value="">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Bespoke Luxury Itinerary & Accommodations</label>
+              <textarea id="clientItinerary" rows="5"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Private Concierge / Vendor Assignment</label>
+              <select id="clientVendor">
+                <option>Aman Resorts Private Liaison</option>
+                <option>VistaJet Private Aviation Charter</option>
+                <option>Pelorus Yacht Expeditions</option>
+                <option>Four Seasons Bespoke Concierge</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+              <button class="btn" onclick="lockBooking()">🔒 Lock Private Booking</button>
+              <button class="btn btn-outline" onclick="exportSummary()">📋 Copy Outreach Prompt</button>
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
             </div>
           </div>
         </div>
@@ -307,6 +380,7 @@
   </div>
 
 <script>
+<<<<<<< HEAD
   let allLeads = [];
   let currentFilter = 'all';
   let selectedLead = null;
@@ -408,6 +482,126 @@
   loadLeads();
   // Poll every 10s for live updates
   setInterval(loadLeads, 10000);
+=======
+  let leads = [
+    {
+      id: 1,
+      name: "u/wanderlust_exec",
+      destination: "Amalfi Coast, Italy",
+      budget: "$35,000",
+      dates: "June 12 - June 22",
+      snippet: "Looking for recommendations on cliffside private villas in Positano with a yacht charter for 4 adults next month. Budget is flexible.",
+      source: "Reddit (r/FATTravel)",
+      urgency: "High Intent",
+      timestamp: "3 mins ago"
+    },
+    {
+      id: 2,
+      name: "Sarah M. (LinkedIn)",
+      destination: "Kyoto & Tokyo, Japan",
+      budget: "$50,000",
+      dates: "Autumn foliage (Nov)",
+      snippet: "Planning a luxury anniversary trip to Japan. Need private ryokan bookings with exclusive tea ceremonies and helicopter transfers between Tokyo and Kyoto.",
+      source: "LinkedIn Travel Group",
+      urgency: "Ready to Book",
+      timestamp: "14 mins ago"
+    },
+    {
+      id: 3,
+      name: "u/AlpineSkier99",
+      destination: "Zermatt, Switzerland",
+      budget: "$25,000",
+      dates: "Next weekend",
+      snippet: "Last minute ski getaway for 2. Need chalet with ski-in/ski-out access and private instructor arranged.",
+      source: "Reddit (r/luxurytravel)",
+      urgency: "Immediate",
+      timestamp: "42 mins ago"
+    }
+  ];
+
+  let selectedLead = null;
+
+  function renderLeads() {
+    const container = document.getElementById('leadsList');
+    document.getElementById('leadCount').innerText = leads.length;
+    container.innerHTML = leads.map(l => `
+      <div class="lead-card ${selectedLead && selectedLead.id === l.id ? 'selected' : ''}" onclick="selectLead(${l.id})">
+        <div class="lead-header">
+          <span class="lead-destination">📍 ${l.destination}</span>
+          <span class="lead-budget">${l.budget}</span>
+        </div>
+        <div class="lead-snippet">${l.snippet}</div>
+        <div class="lead-meta">
+          <span class="badge">${l.urgency}</span>
+          <span>👤 ${l.name}</span>
+          <span>📡 ${l.source}</span>
+          <span>🕒 ${l.timestamp}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function selectLead(id) {
+    selectedLead = leads.find(l => l.id === id);
+    renderLeads();
+
+    document.getElementById('studioForm').style.display = 'block';
+    document.getElementById('clientName').value = selectedLead.name + ` (${selectedLead.source})`;
+    document.getElementById('clientDestination').value = selectedLead.destination;
+    document.getElementById('clientBudget').value = selectedLead.budget;
+    document.getElementById('clientItinerary').value = `Bespoke Itinerary for ${selectedLead.destination}\nDates: ${selectedLead.dates}\nNotes: ${selectedLead.snippet}\n\n[AI Drafted]: Secure VIP reservation at top-tier partner hotel, coordinate private airport transfer, and lock in private guide.`;
+  }
+
+  function simulateNewLead() {
+    const newDestinations = ["Bora Bora Overwater Bungalow", "Maui Private Estate", "Paris & Courchevel Chalet", "Serengeti Luxury Safari"];
+    const newBudgets = ["$40,000", "$60,000", "$30,000", "$45,000"];
+    const rand = Math.floor(Math.random() * newDestinations.length);
+
+    const simulated = {
+      id: Date.now(),
+      name: "u/luxury_seeker_" + Math.floor(Math.random()*1000),
+      destination: newDestinations[rand],
+      budget: newBudgets[rand],
+      dates: "Next Month",
+      snippet: `Looking for top-tier exclusive booking assistance for ${newDestinations[rand]}. Want seamless end-to-end luxury handling.`,
+      source: "Reddit (r/FATTravel Radar)",
+      urgency: "High Intent",
+      timestamp: "Just now"
+    };
+
+    leads.unshift(simulated);
+    renderLeads();
+    selectLead(simulated.id);
+  }
+
+  function lockBooking() {
+    alert("🔒 Private Booking Locked! Itinerary generated and ready for direct client outreach.");
+  }
+
+  function exportSummary() {
+    const text = document.getElementById('clientItinerary').value;
+    navigator.clipboard.writeText(text);
+    alert("📋 Copied bespoke itinerary & outreach brief to clipboard!");
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    if (tab === 'leads') {
+      document.getElementById('pageTitle').innerText = "Real-Time Intent Lead Engine";
+    } else if (tab === 'bookings') {
+      document.getElementById('pageTitle').innerText = "Zion Luxe — Private Bookings Vault";
+    } else if (tab === 'sources') {
+      document.getElementById('pageTitle').innerText = "Active Radar Scrapers (Reddit, FATTravel, Forums)";
+    } else if (tab === 'settings') {
+      document.getElementById('pageTitle').innerText = "AI Intent Filters & Matching Rules";
+    }
+  }
+
+  // Initial render
+  renderLeads();
+  selectLead(leads[0].id);
+>>>>>>> 97e4daa666981aebe40480663d8402247881e609
 </script>
 
 </body>
