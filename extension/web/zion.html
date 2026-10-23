@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zion Luxe — Private Intent & Booking Engine</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    :root {
+      --gold: #D4AF37;
+      --gold-light: #F3E5AB;
+      --dark-bg: #0B0B0E;
+      --card-bg: #141419;
+      --border-color: #262630;
+      --text-main: #F4F4F6;
+      --text-muted: #9BA1A6;
+    }
+    body {
+      background-color: var(--dark-bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 280px;
+      background: var(--card-bg);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+    }
+    .brand {
+      padding: 24px;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--gold);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-links {
+      list-style: none;
+      padding: 16px 0;
+      margin: 0;
+      flex: 1;
+    }
+    .nav-links li {
+      padding: 12px 24px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-links li:hover, .nav-links li.active {
+      color: var(--gold);
+      background: rgba(212, 175, 55, 0.08);
+      border-left: 3px solid var(--gold);
+    }
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      height: 70px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      background: var(--card-bg);
+    }
+    .header-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .stats-bar span {
+      color: var(--gold);
+      font-weight: 600;
+    }
+    .workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .pane {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border-color);
+    }
+    .pane-right {
+      flex: 1.2;
+      background: #0E0E12;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    h2 {
+      font-size: 16px;
+      margin-top: 0;
+      margin-bottom: 16px;
+      letter-spacing: 0.5px;
+      color: var(--gold-light);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .lead-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .lead-card:hover, .lead-card.selected {
+      border-color: var(--gold);
+      box-shadow: 0 0 15px rgba(212, 175, 55, 0.1);
+    }
+    .lead-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .lead-destination {
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .lead-budget {
+      color: var(--gold);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .lead-snippet {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+    .lead-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .badge {
+      background: rgba(212, 175, 55, 0.15);
+      color: var(--gold);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .btn {
+      background: var(--gold);
+      color: #000;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    input, textarea, select {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px;
+      color: var(--text-main);
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--gold);
+    }
+    .itinerary-preview {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <div class="brand">
+      <span>✨</span> ZION LUXE
+    </div>
+    <ul class="nav-links">
+      <li class="active" onclick="switchTab('leads')">🎯 Live Intent Feed</li>
+      <li onclick="switchTab('bookings')">✈️ Private Itineraries</li>
+      <li onclick="switchTab('sources')">📡 Radar Scrapers</li>
+      <li onclick="switchTab('settings')">⚙️ AI & Filters</li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    <header>
+      <div class="header-title" id="pageTitle">Real-Time Intent Lead Engine</div>
+      <div class="stats-bar">
+        <div>Active Scans: <span>14 Sources</span></div>
+        <div>Leads Captured Today: <span id="leadCount">5</span></div>
+        <div>System Status: <span style="color: #4ade80;">LIVE & LISTENING</span></div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- LEADS PANE -->
+      <div class="pane" id="leftPane">
+        <h2>
+          <span>Incoming High-Intent Travelers</span>
+          <button class="btn btn-outline" style="padding: 4px 10px; font-size: 12px;" onclick="simulateNewLead()">+ Sim Live Lead</button>
+        </h2>
+        <div id="leadsList">
+          <!-- Dynamically populated leads -->
+        </div>
+      </div>
+
+      <!-- BOOKING & ITINERARY BUILDER PANE -->
+      <div class="pane-right" id="rightPane">
+        <h2>Private Booking Studio</h2>
+        <div id="bookingStudio">
+          <p style="color: var(--text-muted); font-size: 13px;">Select a traveler lead on the left to instantly load their intent data, draft a bespoke luxury itinerary, and lock in the booking.</p>
+
+          <div class="itinerary-preview" id="studioForm" style="display:none;">
+            <div class="form-group">
+              <label>Client Name / Handle</label>
+              <input type="text" id="clientName" value="">
+            </div>
+            <div style="display: flex; gap: 12px;">
+              <div class="form-group" style="flex:1;">
+                <label>Destination</label>
+                <input type="text" id="clientDestination" value="">
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label>Estimated Budget</label>
+                <input type="text" id="clientBudget" value="">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Bespoke Luxury Itinerary & Accommodations</label>
+              <textarea id="clientItinerary" rows="5"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Private Concierge / Vendor Assignment</label>
+              <select id="clientVendor">
+                <option>Aman Resorts Private Liaison</option>
+                <option>VistaJet Private Aviation Charter</option>
+                <option>Pelorus Yacht Expeditions</option>
+                <option>Four Seasons Bespoke Concierge</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+              <button class="btn" onclick="lockBooking()">🔒 Lock Private Booking</button>
+              <button class="btn btn-outline" onclick="exportSummary()">📋 Copy Outreach Prompt</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let leads = [
+    {
+      id: 1,
+      name: "u/wanderlust_exec",
+      destination: "Amalfi Coast, Italy",
+      budget: "$35,000",
+      dates: "June 12 - June 22",
+      snippet: "Looking for recommendations on cliffside private villas in Positano with a yacht charter for 4 adults next month. Budget is flexible.",
+      source: "Reddit (r/FATTravel)",
+      urgency: "High Intent",
+      timestamp: "3 mins ago"
+    },
+    {
+      id: 2,
+      name: "Sarah M. (LinkedIn)",
+      destination: "Kyoto & Tokyo, Japan",
+      budget: "$50,000",
+      dates: "Autumn foliage (Nov)",
+      snippet: "Planning a luxury anniversary trip to Japan. Need private ryokan bookings with exclusive tea ceremonies and helicopter transfers between Tokyo and Kyoto.",
+      source: "LinkedIn Travel Group",
+      urgency: "Ready to Book",
+      timestamp: "14 mins ago"
+    },
+    {
+      id: 3,
+      name: "u/AlpineSkier99",
+      destination: "Zermatt, Switzerland",
+      budget: "$25,000",
+      dates: "Next weekend",
+      snippet: "Last minute ski getaway for 2. Need chalet with ski-in/ski-out access and private instructor arranged.",
+      source: "Reddit (r/luxurytravel)",
+      urgency: "Immediate",
+      timestamp: "42 mins ago"
+    }
+  ];
+
+  let selectedLead = null;
+
+  function renderLeads() {
+    const container = document.getElementById('leadsList');
+    document.getElementById('leadCount').innerText = leads.length;
+    container.innerHTML = leads.map(l => `
+      <div class="lead-card ${selectedLead && selectedLead.id === l.id ? 'selected' : ''}" onclick="selectLead(${l.id})">
+        <div class="lead-header">
+          <span class="lead-destination">📍 ${l.destination}</span>
+          <span class="lead-budget">${l.budget}</span>
+        </div>
+        <div class="lead-snippet">${l.snippet}</div>
+        <div class="lead-meta">
+          <span class="badge">${l.urgency}</span>
+          <span>👤 ${l.name}</span>
+          <span>📡 ${l.source}</span>
+          <span>🕒 ${l.timestamp}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function selectLead(id) {
+    selectedLead = leads.find(l => l.id === id);
+    renderLeads();
+
+    document.getElementById('studioForm').style.display = 'block';
+    document.getElementById('clientName').value = selectedLead.name + ` (${selectedLead.source})`;
+    document.getElementById('clientDestination').value = selectedLead.destination;
+    document.getElementById('clientBudget').value = selectedLead.budget;
+    document.getElementById('clientItinerary').value = `Bespoke Itinerary for ${selectedLead.destination}\nDates: ${selectedLead.dates}\nNotes: ${selectedLead.snippet}\n\n[AI Drafted]: Secure VIP reservation at top-tier partner hotel, coordinate private airport transfer, and lock in private guide.`;
+  }
+
+  function simulateNewLead() {
+    const newDestinations = ["Bora Bora Overwater Bungalow", "Maui Private Estate", "Paris & Courchevel Chalet", "Serengeti Luxury Safari"];
+    const newBudgets = ["$40,000", "$60,000", "$30,000", "$45,000"];
+    const rand = Math.floor(Math.random() * newDestinations.length);
+
+    const simulated = {
+      id: Date.now(),
+      name: "u/luxury_seeker_" + Math.floor(Math.random()*1000),
+      destination: newDestinations[rand],
+      budget: newBudgets[rand],
+      dates: "Next Month",
+      snippet: `Looking for top-tier exclusive booking assistance for ${newDestinations[rand]}. Want seamless end-to-end luxury handling.`,
+      source: "Reddit (r/FATTravel Radar)",
+      urgency: "High Intent",
+      timestamp: "Just now"
+    };
+
+    leads.unshift(simulated);
+    renderLeads();
+    selectLead(simulated.id);
+  }
+
+  function lockBooking() {
+    alert("🔒 Private Booking Locked! Itinerary generated and ready for direct client outreach.");
+  }
+
+  function exportSummary() {
+    const text = document.getElementById('clientItinerary').value;
+    navigator.clipboard.writeText(text);
+    alert("📋 Copied bespoke itinerary & outreach brief to clipboard!");
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    if (tab === 'leads') {
+      document.getElementById('pageTitle').innerText = "Real-Time Intent Lead Engine";
+    } else if (tab === 'bookings') {
+      document.getElementById('pageTitle').innerText = "Zion Luxe — Private Bookings Vault";
+    } else if (tab === 'sources') {
+      document.getElementById('pageTitle').innerText = "Active Radar Scrapers (Reddit, FATTravel, Forums)";
+    } else if (tab === 'settings') {
+      document.getElementById('pageTitle').innerText = "AI Intent Filters & Matching Rules";
+    }
+  }
+
+  // Initial render
+  renderLeads();
+  selectLead(leads[0].id);
+</script>
+
+</body>
+</html>
