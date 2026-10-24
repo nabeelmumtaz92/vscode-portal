@@ -126,8 +126,9 @@ function createPortalServer({ host, token, claudeBin, useApiKey = false, aiMode 
       if (!command) throw new Error('Missing command');
       const id = String(nextRun++);
       const dir = cwd ? inside(cwd) : (roots()[0] || os.homedir());
-      const proc = spawn('/bin/zsh', ['-lc', String(command)], {
-        cwd: dir, detached: true, env: { ...process.env, TERM: 'dumb', NO_COLOR: '1' },
+      const isWin = process.platform === 'win32';
+      const proc = spawn(isWin ? 'powershell.exe' : '/bin/zsh', isWin ? ['-NoProfile', '-Command', String(command)] : ['-lc', String(command)], {
+        cwd: dir, detached: !isWin, windowsHide: true, env: { ...process.env, TERM: 'dumb', NO_COLOR: '1' },
       });
       const r = { id, command, proc, output: '' };
       const onData = d => {
@@ -440,7 +441,7 @@ function findClaude(extensionsDir) {
     const dirs = fs.readdirSync(extensionsDir).filter(d => d.startsWith('anthropic.claude-code-'))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     for (const d of dirs.reverse()) {
-      const bin = path.join(extensionsDir, d, 'resources', 'native-binary', 'claude');
+      const bin = path.join(extensionsDir, d, 'resources', 'native-binary', process.platform === 'win32' ? 'claude.exe' : 'claude');
       if (fs.existsSync(bin)) return bin;
     }
   } catch {}

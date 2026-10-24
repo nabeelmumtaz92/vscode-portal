@@ -178,7 +178,7 @@ function createStore() {
         else if (e.kind === 'approved') events.push({ type: 'portal.approved', rid: e.rid, allowed: !!e.allowed, at });
       }
       const chat = { id, title: old.title || 'Chat from Portal', created: Math.round((old.created || 0) * 1000) || Date.now(),
-        updated: Math.round((old.updated || 0) * 1000) || Date.now(), session: null, cwd: WORK_DIR, events, imported: 'portal' };
+        updated: Math.round((old.updated || 0) * 1000) || Date.now(), session: old.claude_session || null, cwd: old.claude_session ? path.join(dir, 'claude') : WORK_DIR, events, imported: 'portal' };
       cache.set(id, chat); save(chat, true); chats++;
     }
     try {

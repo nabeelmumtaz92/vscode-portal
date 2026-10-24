@@ -585,6 +585,7 @@ function openChats() { $('#chats').hidden = false; $('#chats-btn').classList.rem
 function closeChats() { $('#chats').hidden = true; }
 $('#chats-btn').onclick = openChats;
 $('#chats-close').onclick = closeChats;
+$('#chats-refresh').onclick = async () => { const b = $('#chats-refresh'); b.textContent = 'Refreshing…'; await renderChats(); b.textContent = 'Refresh'; toast('Chats refreshed'); };
 $('#chats').addEventListener('click', (e) => { if (e.target.id === 'chats') closeChats(); });
 $('#chats-search').oninput = () => debounce('chats', renderChats, 250);
 function applyAgentSettings(st) {

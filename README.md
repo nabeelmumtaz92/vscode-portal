@@ -84,6 +84,12 @@ Then set `vscodePortal.publicUrl` to `https://<your-mac>.<tailnet>.ts.net:8443`.
 
 The iPhone app goes to TestFlight with the script in `mobile/` (see `mobile/scripts`).
 
+### Windows PC
+
+On the Mac, publish the built extension once per version: `scripts/release-vsix.sh` (attaches `vscode-portal.vsix` to the GitHub release).
+On the PC, in PowerShell: `irm https://raw.githubusercontent.com/nabeelmumtaz92/vscode-portal/main/scripts/install-windows.ps1 | iex` (installs VS Code and Claude Code if missing; re-run to update).
+Prompt, Files/Editor, Changes and Terminal (PowerShell) work on Windows; Screen, Mac mode and Always on need a Mac.
+
 ## Tests
 
 ```bash
